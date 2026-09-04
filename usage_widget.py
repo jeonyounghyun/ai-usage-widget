@@ -169,6 +169,22 @@ def fetch_usage():
     return result, errors
 
 
+TOAST_PS1 = Path(__file__).with_name("toast.ps1")
+
+
+def notify_windows(title, body):
+    """Windows 알림 센터 토스트. 백그라운드 스레드에서 PowerShell 호출 (창 없음)."""
+    def run():
+        try:
+            flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(TOAST_PS1),
+                            "-Title", title, "-Body", body], creationflags=flags, timeout=20,
+                           capture_output=True)
+        except Exception:  # noqa: BLE001
+            log.exception("toast failed")
+    threading.Thread(target=run, daemon=True).start()
+
+
 def extra_window(usage, keyword):
     """extra_rate_windows에서 id/title에 keyword가 들어간 창을 찾는다 (예: Fable 전용 주간)."""
     for ew in usage.get("extra_rate_windows") or []:
@@ -340,6 +356,9 @@ class Widget(tk.Tk):
         self.ct_var = tk.BooleanVar(value=self.state.get("click_through", False))
         self.menu.add_checkbutton(label="클릭 통과 (바탕화면·Ctrl 누를 때만 조작)", variable=self.ct_var,
                                   command=lambda: self._set("click_through", self.ct_var.get()))
+        self.toast_var = tk.BooleanVar(value=self.state.get("toast", True))
+        self.menu.add_checkbutton(label="Windows 알림 센터로 알림", variable=self.toast_var,
+                                  command=lambda: self._set("toast", self.toast_var.get()))
         self.sound_var = tk.BooleanVar(value=self.state.get("sound", True))
         self.menu.add_checkbutton(label="알림 소리", variable=self.sound_var,
                                   command=lambda: self._set("sound", self.sound_var.get()))
@@ -485,6 +504,9 @@ class Widget(tk.Tk):
 
     def _alert(self, text, color):
         self.banner = (text, color, time.monotonic() + BANNER_SEC)
+        log.info("alert: %s", text)
+        if self.state.get("toast", True) and TOAST_PS1.exists():
+            notify_windows("AI 사용량 위젯", text)
         if self.state.get("sound", True):
             try:
                 winsound.MessageBeep(winsound.MB_ICONASTERISK)
