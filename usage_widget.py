@@ -18,18 +18,23 @@ RunCat처럼 픽셀 고양이가 달리며, 5시간 한도를 많이 쓸수록 �
   - 적응형 폴링: 사용률이 오르는 중이면 60초, 멈춰 있으면 180→300초, 조회 실패면 2배씩 물러남(최대 10분)
   - 조회 실패 시 마지막 값을 평소처럼 컬러로 유지, 10분 넘게 갱신 안 되면 "N분 전 값" 표시, 1시간 넘으면 회색
   - 카드 본체는 값이 바뀔 때만 다시 그리고, 매 틱에는 고양이만 얹음 (CPU 절약)
+  - 자동 업데이트: 하루 1회 GitHub Releases 확인 → 새 버전이면 팝업, 클릭하면 내려받아 교체 후 재시작
 """
 
 import ctypes
+import io
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
+import urllib.request
 import winsound
+import zipfile
 from ctypes import wintypes
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -71,6 +76,10 @@ ANIM_MS = 100                         # 애니메이션 틱
 BANNER_SEC = 90                       # 알림 배너 유지 시간
 STALE_AFTER_SEC = 3600                # 마지막 성공 후 이 시간이 지나야 회색(오래된 값) 처리
 CONFIG_PATH = Path(__file__).with_name("widget_state.json")
+UPDATE_REPO = "jeonyounghyun/ai-usage-widget"
+UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
+UPDATE_CHECK_SEC = 24 * 3600          # 자동 업데이트 확인 주기
+UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "README.md", "LICENSE")
 STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 STARTUP_BAT = STARTUP_DIR / "ai-usage-widget.bat"
 FONT_DIR = Path("C:/Windows/Fonts")
@@ -222,6 +231,44 @@ def notify_windows(title, body):
         except Exception:  # noqa: BLE001
             log.exception("toast failed")
     threading.Thread(target=run, daemon=True).start()
+
+
+# ---------------------------------------------------------------- 자동 업데이트 (GitHub Releases)
+def _ver_tuple(v):
+    return tuple(int(x) for x in v.strip().lstrip("v").split(".") if x.isdigit())
+
+
+def check_update():
+    """최신 릴리즈 조회. 새 버전이면 (version, zip_url), 아니면 None. 실패 시 예외."""
+    req = urllib.request.Request(UPDATE_API, headers={"User-Agent": f"ai-usage-widget/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    tag = d.get("tag_name", "")
+    if _ver_tuple(tag) <= _ver_tuple(VERSION):
+        return None
+    for a in d.get("assets", []):
+        if a.get("name", "").endswith(".zip"):
+            return tag.lstrip("v"), a["browser_download_url"]
+    return None
+
+
+def apply_update(zip_url, target_dir):
+    """ZIP을 받아 target_dir의 프로그램 파일을 교체한다 (설정/로그는 건드리지 않음)."""
+    req = urllib.request.Request(zip_url, headers={"User-Agent": f"ai-usage-widget/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        blob = r.read()
+    with zipfile.ZipFile(io.BytesIO(blob)) as z:
+        names = z.namelist()
+        if "usage_widget.py" not in names:
+            raise RuntimeError("zip에 usage_widget.py가 없음")
+        for n in names:
+            base = n.replace("\\", "/")
+            if base in UPDATE_FILES or base.startswith("docs/"):
+                dest = Path(target_dir) / base
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with z.open(n) as src, open(dest, "wb") as out:
+                    shutil.copyfileobj(src, out)
+    return True
 
 
 def extra_window(usage, keyword):
@@ -387,10 +434,11 @@ def work_area():
 class Popup(tk.Toplevel):
     """오른쪽 아래에서 올라오는 파스텔 알림 카드. 클릭하면 닫힘, POP_SEC 뒤 자동으로 사라짐."""
 
-    def __init__(self, master, text, color, prov):
+    def __init__(self, master, text, color, prov, on_click=None, seconds=POP_SEC):
         super().__init__(master)
         self.master_widget = master
         self.text, self.color = text, color
+        self.on_click, self.seconds = on_click, seconds
         self.body, self.mark = "#f4a460", "#d98a3f"
         for k, n, a, b, m in PROVIDERS_ALL:
             if k == prov:
@@ -401,7 +449,7 @@ class Popup(tk.Toplevel):
         self.attributes("-topmost", True)
         self.canvas = tk.Canvas(self, width=POP_W, height=POP_H, bg=CHROMA, highlightthickness=0, bd=0)
         self.canvas.pack()
-        self.canvas.bind("<Button-1>", lambda _e: self.close())
+        self.canvas.bind("<Button-1>", self._clicked)
         self._frame, self._t0 = 0, time.monotonic()
         self._photo = None
         _popups.append(self)
@@ -443,7 +491,7 @@ class Popup(tk.Toplevel):
 
     def _anim(self):
         try:
-            if time.monotonic() - self._t0 > POP_SEC:
+            if time.monotonic() - self._t0 > self.seconds:
                 self.close(); return
             self._frame = (self._frame + 1) % len(CAT_LEGS)
             self._photo = ImageTk.PhotoImage(self._render())
@@ -452,6 +500,12 @@ class Popup(tk.Toplevel):
             self.after(140, self._anim)
         except tk.TclError:
             pass
+
+    def _clicked(self, _e):
+        cb = self.on_click
+        self.close()
+        if cb:
+            cb()
 
     def close(self):
         if self in _popups:
@@ -567,6 +621,11 @@ class Widget(tk.Tk):
         self.autostart_var = tk.BooleanVar(value=STARTUP_BAT.exists())
         self.menu.add_checkbutton(label="Windows 시작 시 자동 실행", variable=self.autostart_var,
                                   command=self._toggle_autostart)
+        self.menu.add_separator()
+        self.upd_var = tk.BooleanVar(value=self.state.get("auto_update", True))
+        self.menu.add_checkbutton(label="새 버전 자동 확인 (하루 1회)", variable=self.upd_var,
+                                  command=lambda: self._set("auto_update", self.upd_var.get()))
+        self.menu.add_command(label=f"지금 업데이트 확인 (현재 v{VERSION})", command=lambda: self.check_update(manual=True))
         self.menu.add_separator()
         self.menu.add_command(label="종료", command=self.destroy)
 
@@ -765,6 +824,58 @@ class Widget(tk.Tk):
                 elif prev_pct < 80 <= pct:
                     self._alert(f"{label} 80% 넘었어요 · {fmt_remaining(reset)} 리셋", accents.get(prov, C_WARN), prov)
 
+    # ------------------------------------------------------------ 자동 업데이트
+    def check_update(self, manual=False):
+        def run():
+            try:
+                found = check_update()
+            except Exception as ex:  # noqa: BLE001
+                log.warning("update check failed: %s", ex)
+                if manual:
+                    self.after(0, lambda: Popup(self, f"업데이트 확인 실패: {str(ex)[:60]}", C_WARN, None))
+                return
+            self.after(0, self._update_found, found, manual)
+        self.state["last_update_check"] = time.time()
+        self._save_state()
+        threading.Thread(target=run, daemon=True).start()
+
+    def _update_found(self, found, manual):
+        if not found:
+            if manual:
+                Popup(self, f"최신 버전이에요 (v{VERSION})", C_OK, None)
+            return
+        ver, url = found
+        log.info("update available: v%s", ver)
+        Popup(self, f"새 버전 v{ver} 있어요 · 여기를 클릭하면 업데이트", C_OK, None,
+              on_click=lambda: self._do_update(ver, url), seconds=60)
+
+    def _do_update(self, ver, url):
+        Popup(self, f"v{ver} 내려받는 중…", INK_SOFT, None, seconds=30)
+
+        def run():
+            try:
+                apply_update(url, Path(__file__).resolve().parent)
+                self.after(0, self._restart_after_update, ver)
+            except Exception as ex:  # noqa: BLE001
+                log.exception("update failed")
+                self.after(0, lambda: Popup(self, f"업데이트 실패: {str(ex)[:60]}", C_BAD, None))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _restart_after_update(self, ver):
+        log.info("updated to v%s, restarting", ver)
+        # 콘솔 없는 프로세스에서 cmd/timeout은 신뢰할 수 없으므로, 파이썬 헬퍼가 3초 기다렸다가
+        # (현재 프로세스가 끝나 뮤텍스가 풀린 뒤) 새 버전을 띄운다.
+        exe = Path(sys.executable)
+        pyw = exe.with_name("pythonw.exe")
+        if exe.name.lower() == "python.exe" and pyw.exists():
+            exe = pyw
+        script = str(Path(__file__).resolve())
+        helper = ("import time, subprocess, sys; time.sleep(3); "
+                  f"subprocess.Popen([sys.executable, r'{script}'], close_fds=True)")
+        flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        subprocess.Popen([str(exe), "-c", helper], creationflags=flags | 0x00000008 | 0x00000200, close_fds=True)
+        self.destroy()
+
     def _alert(self, text, color, prov=None):
         self.banner = (text, color, time.monotonic() + BANNER_SEC)
         log.info("alert: %s", text)
@@ -792,6 +903,9 @@ class Widget(tk.Tk):
                 self._update_click_through()
             if self._ticks % 10 == 0:
                 self._check_fullscreen()
+                if (self._ticks >= 300 and self.state.get("auto_update", True)
+                        and time.time() - self.state.get("last_update_check", 0) > UPDATE_CHECK_SEC):
+                    self.check_update()
                 if self.mini and not self._hidden and not self._drag:
                     self._apply_geometry()
             if self.banner and time.monotonic() > self.banner[2]:
