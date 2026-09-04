@@ -15,7 +15,8 @@ RunCat처럼 픽셀 고양이가 달리며, 5시간 한도를 많이 쓸수록 �
   - 80% 도달, 100% 도달, 한도 리셋 시 카드 하단에 알림 배너 + (선택) 알림음
   - Claude의 Fable 전용 주간 한도를 작은 막대로 표시
   - 전체화면 앱(영상/게임/발표) 감지 시 자동 숨김, 종료되면 복귀
-  - 조회 실패 시 마지막 값을 평소처럼 컬러로 유지(상태줄에만 표시), 1시간 넘게 실패해야 회색 처리 + 다음 조회 1회 건너뛰기
+  - 적응형 폴링: 사용률이 오르는 중이면 60초, 멈춰 있으면 180→300초, 조회 실패면 2배씩 물러남(최대 10분)
+  - 조회 실패 시 마지막 값을 평소처럼 컬러로 유지, 10분 넘게 갱신 안 되면 "N분 전 값" 표시, 1시간 넘으면 회색
   - 카드 본체는 값이 바뀔 때만 다시 그리고, 매 틱에는 고양이만 얹음 (CPU 절약)
 """
 
@@ -58,7 +59,13 @@ def acquire_single_instance():
 
 # ---------------------------------------------------------------- 설정
 CODEXBAR_CLI = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "CodexBar" / "codexbar-cli.exe"
-REFRESH_SEC = 180                     # 사용량 재조회 주기 (너무 짧으면 Anthropic 조회 API가 일시 차단함)
+# 적응형 폴링: 사용률이 오르는 중이면 빠르게, 멈춰 있으면 느리게, 조회 실패면 물러남
+REFRESH_FAST = 60                     # 직전 조회보다 5시간 사용률이 올랐을 때
+REFRESH_SEC = 180                     # 변화 없을 때 기본 주기 (60초 고정이면 Anthropic 조회 API가 일시 차단함)
+REFRESH_IDLE = 300                    # IDLE_AFTER번 연속 변화 없으면
+IDLE_AFTER = 6
+BACKOFF_MAX = 600                     # 조회 실패 시 간격을 2배씩 늘리되 이 값까지
+STALE_WARN_MIN = 10                   # 갱신이 이 분수 넘게 안 되면 "N분 전 값"으로 표시
 CLI_TIMEOUT = 90
 ANIM_MS = 100                         # 애니메이션 틱
 BANNER_SEC = 90                       # 알림 배너 유지 시간
@@ -498,7 +505,11 @@ class Widget(tk.Tk):
         self._build_menu()
         self._apply_geometry()
         self._ticks = 0
-        self._skip = 0
+        self._fetching = False
+        self._interval = REFRESH_SEC
+        self._next_fetch = 0.0
+        self._unchanged = 0
+        self._last_pcts = None
         self.refresh()
         self._tick()
 
@@ -652,6 +663,9 @@ class Widget(tk.Tk):
 
     # ------------------------------------------------------------ 데이터
     def refresh(self):
+        if self._fetching:
+            return
+        self._fetching = True
         threading.Thread(target=self._fetch_bg, daemon=True).start()
 
     def _fetch_bg(self):
@@ -661,7 +675,32 @@ class Widget(tk.Tk):
         except Exception as ex:  # noqa: BLE001
             self.after(0, self._apply, None, {}, str(ex))
 
+    def _pcts_snapshot(self):
+        return tuple(((self.usage.get(k) or {}).get("primary") or {}).get("used_percent") for k, *_ in PROVIDERS)
+
+    def _schedule_next(self, ok):
+        """적응형 간격 결정. ok=False면 백오프."""
+        if not ok:
+            self._interval = min(max(self._interval * 2, REFRESH_SEC), BACKOFF_MAX)
+        else:
+            now_pcts = self._pcts_snapshot()
+            rising = (self._last_pcts is not None and any(
+                a is not None and b is not None and b > a for a, b in zip(self._last_pcts, now_pcts)))
+            self._last_pcts = now_pcts
+            if rising:
+                self._unchanged = 0
+                self._interval = REFRESH_FAST
+            else:
+                self._unchanged += 1
+                if self._interval == REFRESH_FAST and self._unchanged < 2:
+                    pass  # 퍼센트는 정수라 1분 안에 안 오를 수 있음 → 빠른 주기를 한 번 더 유지
+                else:
+                    self._interval = REFRESH_IDLE if self._unchanged >= IDLE_AFTER else REFRESH_SEC
+        self._next_fetch = time.monotonic() + self._interval
+        log.info("next fetch in %ds (%s)", self._interval, "ok" if ok else "backoff")
+
     def _apply(self, data, errors, err):
+        self._fetching = False
         if data:
             self._check_alerts(data)
             self.usage.update(data)
@@ -678,8 +717,7 @@ class Widget(tk.Tk):
         self.errors = errors or {}
         for prov, msg in self.errors.items():
             log.info("provider %s: %s", prov, msg[:160])
-        if self.errors or self.error:
-            self._skip = 1
+        self._schedule_next(ok=not (self.errors or self.error))
 
     def _check_alerts(self, data):
         """80% 돌파 / 100% 도달 / 리셋을 감지해 배너를 띄운다."""
@@ -723,11 +761,9 @@ class Widget(tk.Tk):
     def _tick(self):
         try:
             self._ticks += 1
-            if self._ticks % int(REFRESH_SEC * 1000 / ANIM_MS) == 0:
-                if self._skip:
-                    self._skip -= 1
-                else:
-                    self.refresh()
+            if time.monotonic() >= self._next_fetch:
+                self._next_fetch = time.monotonic() + BACKOFF_MAX  # 응답 전 중복 방지, _apply에서 재설정
+                self.refresh()
             if self._ticks % 2 == 0:
                 self._update_click_through()
             if self._ticks % 10 == 0:
@@ -807,7 +843,11 @@ class Widget(tk.Tk):
             return note, INK_SOFT, False
         if self.last_ok:
             ct = " · 클릭 통과 중" if getattr(self, "_ct_now", False) else ""
-            return f"갱신 {self.last_ok.strftime('%H:%M')}{ct}", INK_SOFT, False
+            age_min = int((datetime.now() - self.last_ok).total_seconds() // 60)
+            if age_min >= STALE_WARN_MIN:   # 오래된 값은 숨기지 않고 드러냄
+                return f"{age_min}분 전 값{ct}", C_WARN, False
+            fast = " ⚡" if self._interval == REFRESH_FAST else ""
+            return f"갱신 {self.last_ok.strftime('%H:%M')}{fast}{ct}", INK_SOFT, False
         return "불러오는 중…", INK_SOFT, False
 
     def _base_key_now(self):
