@@ -540,7 +540,8 @@ class Widget(tk.Tk):
             if slot is None:
                 l, t, r, b = work_area()
                 slot = (r - w - 12, b - h - 12)
-            x, y = slot
+            self._mini_slot = slot
+            x, y = slot[0] + int(self.state.get("mini_dx", 0)), slot[1]   # mini_dx: 사용자가 드래그로 정한 좌우 오프셋
         else:
             w, h = W, H
             x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
@@ -605,20 +606,23 @@ class Widget(tk.Tk):
         if self._hit(e.x, e.y):
             self._drag = None
             return
-        if self.mini:
-            return  # 미니 모드는 작업표시줄에 고정
         self._drag = (e.x_root - self.winfo_x(), e.y_root - self.winfo_y())
 
     def _drag_move(self, e):
         if self._drag:
-            self.geometry(f"+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}")
+            if self.mini:   # 미니 모드: 작업표시줄 안에서 좌우로만 이동
+                self.geometry(f"+{e.x_root - self._drag[0]}+{self.winfo_y()}")
+            else:
+                self.geometry(f"+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}")
 
     def _release(self, e):
         if self._drag:
             self._drag = None
-            if not self.mini:
+            if self.mini:
+                self.state["mini_dx"] = self.winfo_x() - self._mini_slot[0]
+            else:
                 self.state["x"], self.state["y"] = self.winfo_x(), self.winfo_y()
-                self._save_state()
+            self._save_state()
             return
         hit = self._hit(e.x, e.y)
         if hit == "close":
@@ -711,7 +715,7 @@ class Widget(tk.Tk):
                 self._update_click_through()
             if self._ticks % 10 == 0:
                 self._check_fullscreen()
-                if self.mini and not self._hidden:
+                if self.mini and not self._hidden and not self._drag:
                     self._apply_geometry()
             if self.banner and time.monotonic() > self.banner[2]:
                 self.banner = None
