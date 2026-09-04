@@ -31,10 +31,28 @@ Win-CodexBar 트레이 앱은 켜 둘 필요 없고, 설치만 되어 있으면 
 > 참고: ChatGPT 웹 채팅과 Gemini 채팅 한도는 조회 API가 없어 표시할 수 없습니다.
 > Claude는 claude.ai 채팅과 Claude Code가 한도를 공유하므로 이 수치가 곧 전체 사용량입니다.
 
-## 설치 (A to Z)
+## 설치
 
 전제: Windows 10/11, 그리고 이 PC에서 **Claude Code**(쓴다면 **Codex CLI**도)에 로그인되어 있을 것.
 위젯은 그 로그인 정보를 읽어 한도를 조회합니다.
+
+### 원클릭: `install.bat` 더블클릭
+
+저장소를 내려받아(ZIP 또는 `git clone`) 폴더 안의 **`install.bat`** 을 더블클릭하면 아래를 자동으로 합니다.
+
+1. Python이 없으면 winget으로 설치
+2. Pillow 설치
+3. Win-CodexBar가 없으면 winget으로 설치
+4. 바탕화면에 "AI Usage Widget" 바로가기 생성 (더블클릭으로 켜고 끔)
+5. Windows 시작 시 자동 실행 여부 질문 (Y/N)
+6. 위젯 실행
+
+끝나면 Win-CodexBar 설정 창이 열립니다. 사람이 직접 해야 하는 건 두 가지뿐입니다.
+
+- 터미널에서 `claude`를 한 번 실행해 로그인 상태 확인
+- Win-CodexBar 설정 → Providers → Claude → *Allow reading Claude Code's credentials* 체크 (이후 앱은 닫아도 됨)
+
+### 수동 설치
 
 1. **Python 3.11+** 설치 (python.org). 설치 화면에서 *Add python.exe to PATH* 체크. tkinter는 기본 포함.
 2. **Pillow** 설치
