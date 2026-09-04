@@ -3,3 +3,4 @@ __pycache__/
 widget_state.json
 widget.log
 widget.log.*
+dist/

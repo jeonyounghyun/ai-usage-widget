@@ -43,6 +43,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
+VERSION = "1.0.0"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -1023,6 +1024,6 @@ if __name__ == "__main__":
         root = tk.Tk(); root.withdraw()
         mb.showerror("AI Usage Widget", f"codexbar-cli.exe를 찾을 수 없습니다:\n{CODEXBAR_CLI}\n\nWin-CodexBar를 먼저 설치하세요.")
         sys.exit(1)
-    log.info("start")
+    log.info("start v%s", VERSION)
     Widget().mainloop()
     log.info("exit")
