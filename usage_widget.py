@@ -287,6 +287,100 @@ def clamp_to_screen(x, y):
     return x, y
 
 
+# ---------------------------------------------------------------- 알림 팝업 (위젯과 같은 디자인)
+POP_W, POP_H, POP_SEC = 300, 84, 8
+_popups = []   # 떠 있는 팝업 (아래에서부터 쌓기)
+
+
+def work_area():
+    r = _RECT()
+    _user32.SystemParametersInfoW(48, 0, ctypes.byref(r), 0)  # SPI_GETWORKAREA (주 모니터, 작업표시줄 제외)
+    return r.l, r.t, r.r, r.b
+
+
+class Popup(tk.Toplevel):
+    """오른쪽 아래에서 올라오는 파스텔 알림 카드. 클릭하면 닫힘, POP_SEC 뒤 자동으로 사라짐."""
+
+    def __init__(self, master, text, color, prov):
+        super().__init__(master)
+        self.master_widget = master
+        self.text, self.color = text, color
+        self.body, self.mark = "#f4a460", "#d98a3f"
+        for k, n, a, b, m in PROVIDERS:
+            if k == prov:
+                self.body, self.mark = b, m
+        self.overrideredirect(True)
+        self.configure(bg=CHROMA)
+        self.attributes("-transparentcolor", CHROMA)
+        self.attributes("-topmost", True)
+        self.canvas = tk.Canvas(self, width=POP_W, height=POP_H, bg=CHROMA, highlightthickness=0, bd=0)
+        self.canvas.pack()
+        self.canvas.bind("<Button-1>", lambda _e: self.close())
+        self._frame, self._t0 = 0, time.monotonic()
+        self._photo = None
+        _popups.append(self)
+        self._place()
+        self._anim()
+
+    def _place(self):
+        l, t, r, b = work_area()
+        idx = _popups.index(self)
+        x = r - POP_W - 16
+        y = b - POP_H - 16 - idx * (POP_H + 10)
+        self.geometry(f"{POP_W}x{POP_H}+{x}+{y}")
+
+    def _render(self):
+        S = SS
+        img = Image.new("RGB", (POP_W * S, POP_H * S), CARD)
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle((0, 0, POP_W * S - 1, POP_H * S - 1), radius=16 * S, outline=CARD_EDGE, width=2 * S)
+        d.rounded_rectangle((10 * S, 14 * S, 14 * S, (POP_H - 14) * S), radius=2 * S, fill=self.color)  # 강조 바
+        w = self.master_widget
+        d.text((78 * S, 14 * S), "AI 사용량", font=w.f_tiny, fill=INK_SOFT)
+        # 본문: 두 줄까지 접기
+        words, lines, cur = self.text.split(" "), [], ""
+        for wd in words:
+            trial = (cur + " " + wd).strip()
+            if d.textlength(trial, font=w.f_small) > (POP_W - 92) * S and cur:
+                lines.append(cur); cur = wd
+            else:
+                cur = trial
+        lines.append(cur)
+        for i, ln in enumerate(lines[:2]):
+            d.text((78 * S, (30 + i * 16) * S), ln, font=w.f_small, fill=INK)
+        out = img.resize((POP_W, POP_H), Image.LANCZOS)
+        mask = Image.new("L", (POP_W, POP_H), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, POP_W - 1, POP_H - 1), radius=16, fill=255)
+        out = Image.composite(out, Image.new("RGB", (POP_W, POP_H), CHROMA), mask)
+        w._cat(ImageDraw.Draw(out), 20, 24, self._frame, self.body, self.mark, False)
+        return out
+
+    def _anim(self):
+        try:
+            if time.monotonic() - self._t0 > POP_SEC:
+                self.close(); return
+            self._frame = (self._frame + 1) % len(CAT_LEGS)
+            self._photo = ImageTk.PhotoImage(self._render())
+            self.canvas.delete("all")
+            self.canvas.create_image(0, 0, image=self._photo, anchor="nw")
+            self.after(140, self._anim)
+        except tk.TclError:
+            pass
+
+    def close(self):
+        if self in _popups:
+            _popups.remove(self)
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
+        for p in _popups:
+            try:
+                p._place()
+            except tk.TclError:
+                pass
+
+
 # ---------------------------------------------------------------- 위젯
 class Widget(tk.Tk):
     def __init__(self):
@@ -356,8 +450,11 @@ class Widget(tk.Tk):
         self.ct_var = tk.BooleanVar(value=self.state.get("click_through", False))
         self.menu.add_checkbutton(label="클릭 통과 (바탕화면·Ctrl 누를 때만 조작)", variable=self.ct_var,
                                   command=lambda: self._set("click_through", self.ct_var.get()))
-        self.toast_var = tk.BooleanVar(value=self.state.get("toast", True))
-        self.menu.add_checkbutton(label="Windows 알림 센터로 알림", variable=self.toast_var,
+        self.popup_var = tk.BooleanVar(value=self.state.get("popup", True))
+        self.menu.add_checkbutton(label="알림 팝업 (고양이 카드)", variable=self.popup_var,
+                                  command=lambda: self._set("popup", self.popup_var.get()))
+        self.toast_var = tk.BooleanVar(value=self.state.get("toast", False))
+        self.menu.add_checkbutton(label="Windows 알림 센터로도 알림", variable=self.toast_var,
                                   command=lambda: self._set("toast", self.toast_var.get()))
         self.sound_var = tk.BooleanVar(value=self.state.get("sound", True))
         self.menu.add_checkbutton(label="알림 소리", variable=self.sound_var,
@@ -496,16 +593,21 @@ class Widget(tk.Tk):
                     continue
                 label = f"{names.get(prov, prov)} {wname}"
                 if prev_reset and reset and reset != prev_reset and pct < prev_pct:
-                    self._alert(f"{label} 한도가 리셋됐어요 ({int(pct)}%)", C_OK)
+                    self._alert(f"{label} 한도가 리셋됐어요 ({int(pct)}%)", C_OK, prov)
                 elif prev_pct < 100 <= pct:
-                    self._alert(f"{label} 한도 소진 · {fmt_remaining(reset)} 리셋", C_BAD)
+                    self._alert(f"{label} 한도 소진 · {fmt_remaining(reset)} 리셋", C_BAD, prov)
                 elif prev_pct < 80 <= pct:
-                    self._alert(f"{label} 80% 넘었어요 · {fmt_remaining(reset)} 리셋", accents.get(prov, C_WARN))
+                    self._alert(f"{label} 80% 넘었어요 · {fmt_remaining(reset)} 리셋", accents.get(prov, C_WARN), prov)
 
-    def _alert(self, text, color):
+    def _alert(self, text, color, prov=None):
         self.banner = (text, color, time.monotonic() + BANNER_SEC)
         log.info("alert: %s", text)
-        if self.state.get("toast", True) and TOAST_PS1.exists():
+        if self.state.get("popup", True):
+            try:
+                Popup(self, text, color, prov)
+            except Exception:  # noqa: BLE001
+                log.exception("popup failed")
+        if self.state.get("toast", False) and TOAST_PS1.exists():
             notify_windows("AI 사용량 위젯", text)
         if self.state.get("sound", True):
             try:
