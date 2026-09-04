@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -984,7 +984,7 @@ class Widget(tk.Tk):
             age_min = int((datetime.now() - self.last_ok).total_seconds() // 60)
             if age_min >= STALE_WARN_MIN:   # 오래된 값은 숨기지 않고 드러냄
                 return f"{age_min}분 전 값{ct}", C_WARN, False
-            fast = " ⚡" if self._interval == REFRESH_FAST else ""
+            fast = " · 1분 갱신" if self._interval == REFRESH_FAST else ""   # 폰트에 없는 기호(⚡) 대신 글자
             return f"갱신 {self.last_ok.strftime('%H:%M')}{fast}{ct}", INK_SOFT, False
         return "불러오는 중…", INK_SOFT, False
 
