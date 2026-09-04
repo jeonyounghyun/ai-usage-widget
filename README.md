@@ -31,24 +31,40 @@ Win-CodexBar 트레이 앱은 켜 둘 필요 없고, 설치만 되어 있으면 
 > 참고: ChatGPT 웹 채팅과 Gemini 채팅 한도는 조회 API가 없어 표시할 수 없습니다.
 > Claude는 claude.ai 채팅과 Claude Code가 한도를 공유하므로 이 수치가 곧 전체 사용량입니다.
 
-## 설치
+## 설치 (A to Z)
 
-1. **Python 3.11+** 와 **Pillow**
+전제: Windows 10/11, 그리고 이 PC에서 **Claude Code**(쓴다면 **Codex CLI**도)에 로그인되어 있을 것.
+위젯은 그 로그인 정보를 읽어 한도를 조회합니다.
+
+1. **Python 3.11+** 설치 (python.org). 설치 화면에서 *Add python.exe to PATH* 체크. tkinter는 기본 포함.
+2. **Pillow** 설치
    ```
    pip install pillow
    ```
-2. **Win-CodexBar** 설치 후 한 번 실행해서 설정
+3. **Win-CodexBar** 설치 후 한 번 실행해서 설정
    ```
    winget install Finesssee.Win-CodexBar
    ```
-   설정 → Providers → Claude → *Allow reading Claude Code's credentials* 체크.
-   Claude Code와 Codex CLI에 로그인되어 있어야 합니다.
-3. 이 저장소를 내려받고 실행
+   트레이 아이콘 우클릭 → 설정 → Providers → Claude → *Allow reading Claude Code's credentials* 체크.
+   이후 트레이 앱은 꺼도 됩니다 (CLI만 있으면 위젯이 동작).
+4. 이 저장소를 내려받기 (`git clone` 또는 ZIP). 필요한 파일은 `usage_widget.py`, `toast.ps1`, `toggle_widget.bat`.
+5. 실행
    ```
    pythonw usage_widget.py
    ```
+   좌상단에 카드가 뜨면 성공. 첫 조회는 5~10초 걸립니다.
+6. (선택) `toggle_widget.bat`의 바로가기를 바탕화면에 만들면 더블클릭으로 켜고 끌 수 있고,
+   위젯 우클릭 → *Windows 시작 시 자동 실행*으로 부팅 시 자동으로 뜹니다.
 
-`toggle_widget.bat`을 바탕화면 바로가기로 만들어 두면 더블클릭 한 번으로 켜고 끌 수 있습니다.
+### 문제 해결
+
+| 증상 | 원인 / 해결 |
+|---|---|
+| "codexbar-cli.exe를 찾을 수 없습니다" | 3번 미설치 |
+| Claude 자리가 "–", "조회 지연" | 3번의 자격증명 허용이 안 됐거나 Claude Code 미로그인. 터미널에서 `claude` 한 번 실행 |
+| GPT 자리가 "–" | Codex CLI를 안 쓰면 정상. Claude만 표시된 채로 쓰면 됨 |
+| 글씨체가 다름 | Paperlogy, Pretendard 폰트가 없으면 맑은 고딕으로 대체. 같은 모양을 원하면 두 폰트 설치 |
+| 위젯이 안 뜨는데 오류도 없음 | 폴더의 `widget.log` 확인 |
 
 ## 조작
 
