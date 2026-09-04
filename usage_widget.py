@@ -86,7 +86,7 @@ WINDOWS = [("primary", "5시간"), ("secondary", "7일")]
 SS = 2
 W, H = 560, 126
 RADIUS = 16
-MINI_W, MINI_H = 236, 34   # 작업표시줄 미니 모드 크기
+MINI_W, MINI_H = 256, 34   # 작업표시줄 미니 모드 크기
 GAUGE = 56
 RING_W = 7
 
@@ -115,6 +115,22 @@ CAT_SLEEP_BODY = [r.replace("e", "-") for r in CAT_BODY]
 CAT_SLEEP_LEGS = ["....bbbbbbbbbbbb..", ".................."]
 CAT_PX = 2  # 위젯 고양이 도트 크기 (논리 px)
 CAT_PX_POPUP = 3  # 알림 팝업 고양이 도트 크기
+
+# 미니 모드용 얼굴 아이콘 (11x9). 달릴 땐 위아래로 까딱, 잠들면 눈 감음
+CAT_HEAD = [
+    ".b.......b.",
+    ".bb.....bb.",
+    ".bpb...bpb.",
+    ".bbbbbbbbb.",
+    "bbbbbbbbbbb",
+    "bbeebbbeebb",
+    "bbbbbbbbbbb",
+    "bbbbmbmbbbb",
+    ".bbbbbbbbb.",
+]
+CAT_HEAD_SLEEP = [r.replace("e", "-") for r in CAT_HEAD]
+CAT_HEAD_BOB = [0, -1, 0, 1]
+CAT_PX_MINI = 2
 
 
 # ---------------------------------------------------------------- 유틸
@@ -826,7 +842,7 @@ class Widget(tk.Tk):
             pct5 = ((self.usage.get(pkey) or {}).get("primary") or {}).get("used_percent")
             sleeping = pct5 is None or pct5 >= 100
             if self.mini:
-                self._cat(d, 8 + i * (MINI_W // 2), 5, self._anim[pkey]["frame"], body, mark, sleeping)
+                self._cat_head(d, 9 + i * (MINI_W // 2), 8, self._anim[pkey]["frame"], body, mark, sleeping)
             else:
                 ox = 10 + i * (half - 2)
                 self._cat(d, ox, 9, self._anim[pkey]["frame"], body, mark, sleeping)
@@ -853,13 +869,13 @@ class Widget(tk.Tk):
             p7 = (u.get("secondary") or {}).get("used_percent")
             t5 = "–" if p5 is None else f"{int(round(p5))}%"
             t7 = "–" if p7 is None else f"{int(round(p7))}%"
-            x = ox + 40
-            d.text((x * S, (MINI_H / 2) * S), t5, font=self.f_small,
+            x = ox + 30
+            d.text((x * S, (MINI_H / 2) * S), t5, font=self.f_num,
                    fill=(C_STALE if stale else pct_color(p5)), anchor="lm")
-            x += d.textlength(t5, font=self.f_small) / S + 4
+            x += d.textlength(t5, font=self.f_num) / S + 4
             d.text((x * S, (MINI_H / 2) * S), "·", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
             x += 7
-            d.text((x * S, (MINI_H / 2) * S), t7, font=self.f_tiny,
+            d.text((x * S, (MINI_H / 2) * S), t7, font=self.f_small,
                    fill=(C_STALE if stale else pct_color(p7)), anchor="lm")
             if i == 0:
                 lx = (half + 2) * S
@@ -965,6 +981,21 @@ class Widget(tk.Tk):
         d.ellipse(inner, fill=CARD)
         f = self.f_num_s if len(txt) >= 4 else self.f_num
         d.text((cx, cy), txt, font=f, fill=INK_SOFT if stale else INK, anchor="mm")
+
+    def _cat_head(self, d, x, y, fi, body, mark, sleeping, px=CAT_PX_MINI):
+        """미니 모드용 얼굴 아이콘."""
+        colors = {"b": body, "e": "#2f2a28", "p": "#ffb7c5", "m": "#2f2a28", "-": "#2f2a28"}
+        rows = CAT_HEAD_SLEEP if sleeping else CAT_HEAD
+        dy = 0 if sleeping else CAT_HEAD_BOB[fi]
+        for r, row in enumerate(rows):
+            for c, ch in enumerate(row):
+                col = colors.get(ch)
+                if col:
+                    x0, y0 = x + c * px, y + dy + r * px
+                    d.rectangle((x0, y0, x0 + px - 1, y0 + px - 1), fill=col)
+        if sleeping:
+            phase = (self._ticks // 6) % 3
+            d.text((x + 11 * px - 2, y - 6 + phase * 2), "z", font=self.f_z, fill=INK_SOFT)
 
     def _cat(self, d, x, y, fi, body, mark, sleeping, px=CAT_PX):
         colors = {"b": body, "s": mark, "e": "#2f2a28", "p": "#ffb7c5", "m": "#2f2a28", "-": "#2f2a28"}

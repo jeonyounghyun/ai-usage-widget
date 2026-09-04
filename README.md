@@ -5,6 +5,14 @@ RunCat처럼 픽셀 고양이가 달리는데, 한도를 많이 쓸수록 빨리
 
 ![preview](docs/preview.png)
 
+작업표시줄 미니 모드 (더블클릭으로 전환):
+
+![taskbar](docs/taskbar-mini.png)
+
+고양이 상태:
+
+![cats](docs/cats.png)
+
 ## 특징
 
 - **Claude 5h / 7d, GPT(Codex) 5h / 7d** 도넛 게이지 + 리셋까지 남은 시간
