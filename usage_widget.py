@@ -84,9 +84,9 @@ WINDOWS = [("primary", "5시간"), ("secondary", "7일")]
 
 # 레이아웃 (논리 px). 카드는 SS배 슈퍼샘플링 후 축소, 고양이는 원본 도트.
 SS = 2
-W, H = 500, 134
-RADIUS = 18
-GAUGE = 54
+W, H = 560, 126
+RADIUS = 16
+GAUGE = 56
 RING_W = 7
 
 # ---------------------------------------------------------------- 픽셀 고양이 (18x12, 옆모습 달리기)
@@ -289,7 +289,7 @@ def clamp_to_screen(x, y):
 
 
 # ---------------------------------------------------------------- 알림 팝업 (위젯과 같은 디자인)
-POP_W, POP_H, POP_SEC = 340, 92, 8
+POP_W, POP_H, POP_SEC = 370, 96, 8
 _popups = []   # 떠 있는 팝업 (아래에서부터 쌓기)
 
 
@@ -337,7 +337,7 @@ class Popup(tk.Toplevel):
         d.rounded_rectangle((0, 0, POP_W * S - 1, POP_H * S - 1), radius=16 * S, outline=CARD_EDGE, width=2 * S)
         d.rounded_rectangle((10 * S, 14 * S, 14 * S, (POP_H - 14) * S), radius=2 * S, fill=self.color)  # 강조 바
         w = self.master_widget
-        d.text((84 * S, 12 * S), "AI 사용량", font=w.f_tiny, fill=INK_SOFT)
+        d.text((84 * S, 10 * S), "AI 사용량", font=w.f_tiny, fill=INK_SOFT)
         # 본문: 두 줄까지 접기
         words, lines, cur = self.text.split(" "), [], ""
         for wd in words:
@@ -348,12 +348,12 @@ class Popup(tk.Toplevel):
                 cur = trial
         lines.append(cur)
         for i, ln in enumerate(lines[:2]):
-            d.text((84 * S, (32 + i * 20) * S), ln, font=w.f_pop, fill=INK)
+            d.text((84 * S, (32 + i * 22) * S), ln, font=w.f_pop, fill=INK)
         out = img.resize((POP_W, POP_H), Image.LANCZOS)
         mask = Image.new("L", (POP_W, POP_H), 0)
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, POP_W - 1, POP_H - 1), radius=16, fill=255)
         out = Image.composite(out, Image.new("RGB", (POP_W, POP_H), CHROMA), mask)
-        w._cat(ImageDraw.Draw(out), 22, 28, self._frame, self.body, self.mark, False, px=CAT_PX_POPUP)
+        w._cat(ImageDraw.Draw(out), 22, 30, self._frame, self.body, self.mark, False, px=CAT_PX_POPUP)
         return out
 
     def _anim(self):
@@ -402,12 +402,12 @@ class Widget(tk.Tk):
         self._anim = {k: {"frame": 0, "next": 0.0} for k, *_ in PROVIDERS}
         self._buttons = {}
 
-        self.f_title = font("Paperlogy-7Bold.ttf", 17)
-        self.f_num = font("Paperlogy-7Bold.ttf", 13)
-        self.f_num_s = font("Paperlogy-7Bold.ttf", 11)
-        self.f_small = font("Pretendard-SemiBold.ttf", 11)
-        self.f_tiny = font("Pretendard-Medium.ttf", 10)
-        self.f_pop = font("Pretendard-SemiBold.ttf", 12)
+        self.f_title = font("Paperlogy-7Bold.ttf", 19)
+        self.f_num = font("Paperlogy-7Bold.ttf", 15)
+        self.f_num_s = font("Paperlogy-7Bold.ttf", 12)
+        self.f_small = font("Pretendard-SemiBold.ttf", 12)
+        self.f_tiny = font("Pretendard-Medium.ttf", 11)
+        self.f_pop = font("Pretendard-SemiBold.ttf", 13)
         self.f_btn = font("Pretendard-Bold.ttf", 11)
         self.f_z = font("Pretendard-Bold.ttf", 9, scale=1)
 
@@ -736,10 +736,10 @@ class Widget(tk.Tk):
         d = ImageDraw.Draw(out)
         half = W // 2
         for i, (pkey, name, accent, body, mark) in enumerate(PROVIDERS):
-            ox = 12 + i * (half - 2)
+            ox = 10 + i * (half - 2)
             pct5 = ((self.usage.get(pkey) or {}).get("primary") or {}).get("used_percent")
             sleeping = pct5 is None or pct5 >= 100
-            self._cat(d, ox, 10, self._anim[pkey]["frame"], body, mark, sleeping)
+            self._cat(d, ox, 9, self._anim[pkey]["frame"], body, mark, sleeping)
         if os.environ.get("WIDGET_SNAP"):
             out.save(os.environ["WIDGET_SNAP"])
         self._photo = ImageTk.PhotoImage(out)
@@ -755,20 +755,20 @@ class Widget(tk.Tk):
         self._buttons = {}
         half = W // 2
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
-            ox = 12 + i * (half - 2)
+            ox = 10 + i * (half - 2)
             u = self.usage.get(key) or {}
             stale = self._is_stale(key)
 
-            d.text(((ox + 42) * S, 6 * S), name, font=self.f_title, fill=accent)
+            d.text(((ox + 40) * S, 4 * S), name, font=self.f_title, fill=accent)
             sub = "오래된 값 (1시간 이상 조회 실패)" if stale and u else (u.get("login_method") or "")
-            d.text(((ox + 42) * S, 28 * S), sub, font=self.f_tiny, fill=C_WARN if stale and u else INK_SOFT)
+            d.text(((ox + 40) * S, 29 * S), sub, font=self.f_tiny, fill=C_WARN if stale and u else INK_SOFT)
 
             # 추가 창 (Claude: Fable 전용 주간) - 작은 막대
             fb = extra_window(u, "fable")
             if fb.get("used_percent") is not None:
                 fp = fb["used_percent"]
-                bx0, bx1, by = ox + 136, ox + half - 28, 46
-                d.text(((ox + 42) * S, (by - 4) * S), f"Fable 주간 {int(fp)}%", font=self.f_tiny, fill=INK_SOFT)
+                bx0, bx1, by = ox + 146, ox + half - 30, 49
+                d.text(((ox + 40) * S, (by - 5) * S), f"Fable 주간 {int(fp)}%", font=self.f_tiny, fill=INK_SOFT)
                 d.rounded_rectangle((bx0 * S, by * S, bx1 * S, (by + 4) * S), radius=2 * S, fill=TRACK)
                 fx = bx0 + (bx1 - bx0) * min(fp, 100) / 100
                 if fx > bx0 + 2:
@@ -777,33 +777,33 @@ class Widget(tk.Tk):
 
             for j, (wkey, wname) in enumerate(WINDOWS):
                 win = u.get(wkey) or {}
-                gx, gy = ox + j * 120, 60
+                gx, gy = ox + j * 138, 62
                 self._gauge(d, gx, gy, win.get("used_percent"), stale)
-                d.text(((gx + GAUGE + 6) * S, (gy + 10) * S), wname, font=self.f_small, fill=INK)
+                d.text(((gx + GAUGE + 6) * S, (gy + 9) * S), wname, font=self.f_small, fill=INK)
                 d.text(((gx + GAUGE + 6) * S, (gy + 27) * S), fmt_remaining(win.get("resets_at")),
                        font=self.f_tiny, fill=INK_SOFT)
                 if self.state.get("pace", False) and not stale:
                     hint = pace_hint(u, wkey)
                     if hint:
-                        d.ellipse(((gx + GAUGE + 7) * S, (gy + 46) * S, (gx + GAUGE + 12) * S, (gy + 51) * S), fill=hint[1])
-                        d.text(((gx + GAUGE + 15) * S, (gy + 42) * S), hint[0], font=self.f_tiny, fill=hint[1])
+                        d.ellipse(((gx + GAUGE + 7) * S, (gy + 48) * S, (gx + GAUGE + 12) * S, (gy + 53) * S), fill=hint[1])
+                        d.text(((gx + GAUGE + 15) * S, (gy + 43) * S), hint[0], font=self.f_tiny, fill=hint[1])
 
             if i == 0:
                 lx = (half + 2) * S
-                d.line((lx, 16 * S, lx, (H - 16) * S), fill=TRACK, width=2 * S)
+                d.line((lx, 12 * S, lx, (H - 12) * S), fill=TRACK, width=2 * S)
 
         # 상태 / 알림 배너 (우하단)
         msg, col, is_banner = self._status()
+        rx, cy = W - 56, 14   # 새로고침 버튼 왼쪽에 붙임
         if is_banner:
             tw = d.textlength(msg, font=self.f_tiny)
-            d.rounded_rectangle((10 * S, (H - 19) * S, 20 * S + tw + 10 * S, (H - 4) * S),
-                                radius=6 * S, fill=col)
-            d.text((15 * S, (H - 11.5) * S), msg, font=self.f_tiny, fill="#ffffff", anchor="lm")
+            d.rounded_rectangle((rx * S - tw - 12 * S, (cy - 8) * S, rx * S, (cy + 8) * S), radius=6 * S, fill=col)
+            d.text(((rx - 6) * S, cy * S), msg, font=self.f_tiny, fill="#ffffff", anchor="rm")
         else:
-            d.text((14 * S, (H - 6) * S), msg, font=self.f_tiny, fill=col, anchor="ld")
+            d.text((rx * S, cy * S), msg, font=self.f_tiny, fill=col, anchor="rm")
 
         # 버튼 (↻, ✕)
-        for label, bx in (("refresh", W - 40), ("close", W - 20)):
+        for label, bx in (("refresh", W - 38), ("close", W - 18)):
             r, cx, cy = 7, bx, 14
             d.ellipse(((cx - r) * S, (cy - r) * S, (cx + r) * S, (cy + r) * S), fill="#f6eadf")
             if label == "refresh":
