@@ -86,6 +86,7 @@ WINDOWS = [("primary", "5시간"), ("secondary", "7일")]
 SS = 2
 W, H = 560, 126
 RADIUS = 16
+MINI_W, MINI_H = 236, 34   # 작업표시줄 미니 모드 크기
 GAUGE = 56
 RING_W = 7
 
@@ -222,6 +223,28 @@ def font(name, size, scale=SS):
 # ---------------------------------------------------------------- Win32: 전체화면 감지 / 화면 범위
 _user32 = ctypes.windll.user32
 
+# 64비트에서 HWND/포인터 인자가 32비트 int로 잘리지 않도록 시그니처 명시 (없으면 SetWindowPos(HWND_TOPMOST)가 조용히 실패)
+_HWND = wintypes.HWND
+_user32.GetForegroundWindow.restype = _HWND
+_user32.GetAncestor.argtypes = [_HWND, wintypes.UINT]
+_user32.GetAncestor.restype = _HWND
+_user32.SetWindowPos.argtypes = [_HWND, _HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+_user32.SetWindowPos.restype = wintypes.BOOL
+_user32.GetWindowLongW.argtypes = [_HWND, ctypes.c_int]
+_user32.GetWindowLongW.restype = wintypes.LONG
+_user32.SetWindowLongW.argtypes = [_HWND, ctypes.c_int, wintypes.LONG]
+_user32.SetWindowLongW.restype = wintypes.LONG
+_user32.GetWindowRect.argtypes = [_HWND, ctypes.c_void_p]
+_user32.GetClassNameW.argtypes = [_HWND, ctypes.c_wchar_p, ctypes.c_int]
+_user32.MonitorFromWindow.argtypes = [_HWND, wintypes.DWORD]
+_user32.MonitorFromWindow.restype = ctypes.c_void_p
+_user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+_user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+_user32.FindWindowW.restype = _HWND
+_user32.FindWindowExW.argtypes = [_HWND, _HWND, ctypes.c_wchar_p, ctypes.c_wchar_p]
+_user32.FindWindowExW.restype = _HWND
+HWND_TOPMOST = _HWND(-1)
+
 
 class _RECT(ctypes.Structure):
     _fields_ = [("l", wintypes.LONG), ("t", wintypes.LONG), ("r", wintypes.LONG), ("b", wintypes.LONG)]
@@ -246,7 +269,8 @@ def foreground_is_fullscreen(own_hwnd):
         r = _RECT()
         _user32.GetWindowRect(h, ctypes.byref(r))
         mon = _user32.MonitorFromWindow(h, 2)  # MONITOR_DEFAULTTONEAREST
-        mi = _MONITORINFO(); mi.cbSize = ctypes.sizeof(_MONITORINFO)
+        mi = _MONITORINFO()
+        mi.cbSize = ctypes.sizeof(_MONITORINFO)
         _user32.GetMonitorInfoW(mon, ctypes.byref(mi))
         m = mi.rcMonitor
         return r.l <= m.l and r.t <= m.t and r.r >= m.r and r.b >= m.b
@@ -278,6 +302,30 @@ def set_click_through(hwnd, enable):
         _user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new)
         return True
     return False
+
+
+def taskbar_slot(w, h):
+    """작업표시줄 알림 영역(시계) 왼쪽에 w x h 를 놓을 좌표. 작업표시줄이 가로가 아니면 None."""
+    try:
+        tb = _user32.FindWindowW("Shell_TrayWnd", None)
+        if not tb:
+            return None
+        r = _RECT()
+        _user32.GetWindowRect(tb, ctypes.byref(r))
+        if (r.b - r.t) > (r.r - r.l):
+            return None  # 세로 작업표시줄
+        tray = _user32.FindWindowExW(tb, 0, "TrayNotifyWnd", None)
+        tr = _RECT()
+        if tray:
+            _user32.GetWindowRect(tray, ctypes.byref(tr))
+            right = tr.l
+        else:
+            right = r.r - 200
+        x = right - w - 8
+        y = r.t + ((r.b - r.t) - h) // 2
+        return x, y
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def clamp_to_screen(x, y):
@@ -399,6 +447,7 @@ class Widget(tk.Tk):
         self._base_key = None
         self._last_frame_key = None
         self._hidden = False
+        self.mini = bool(self.state.get("mini", False))
         self._anim = {k: {"frame": 0, "next": 0.0} for k, *_ in PROVIDERS}
         self._buttons = {}
 
@@ -422,6 +471,7 @@ class Widget(tk.Tk):
 
         self.canvas = tk.Canvas(self, width=W, height=H, bg=CHROMA, highlightthickness=0, bd=0)
         self.canvas.pack()
+        self.canvas.bind("<Double-Button-1>", lambda _e: self.toggle_mini())
         self.canvas.bind("<ButtonPress-1>", self._press)
         self.canvas.bind("<B1-Motion>", self._drag_move)
         self.canvas.bind("<ButtonRelease-1>", self._release)
@@ -429,6 +479,7 @@ class Widget(tk.Tk):
         self.canvas.bind("<Motion>", self._motion)
 
         self._build_menu()
+        self._apply_geometry()
         self._ticks = 0
         self._skip = 0
         self.refresh()
@@ -439,6 +490,9 @@ class Widget(tk.Tk):
         kw = dict(tearoff=0, bg=CARD, fg=INK, activebackground="#ffe9d6", activeforeground=INK)
         self.menu = tk.Menu(self, **kw)
         self.menu.add_command(label="지금 새로고침", command=self.refresh)
+        self.mini_var = tk.BooleanVar(value=self.mini)
+        self.menu.add_checkbutton(label="작업표시줄 미니 모드 (더블클릭으로 전환)", variable=self.mini_var,
+                                  command=lambda: self.toggle_mini(self.mini_var.get()))
 
         alpha_menu = tk.Menu(self.menu, **kw)
         self.alpha_var = tk.DoubleVar(value=self.state.get("alpha", 1.0))
@@ -471,6 +525,30 @@ class Widget(tk.Tk):
                                   command=self._toggle_autostart)
         self.menu.add_separator()
         self.menu.add_command(label="종료", command=self.destroy)
+
+    def toggle_mini(self, value=None):
+        self.mini = (not self.mini) if value is None else bool(value)
+        self.mini_var.set(self.mini)
+        self._set("mini", self.mini)
+        self._base_key = None
+        self._apply_geometry()
+
+    def _apply_geometry(self):
+        if self.mini:
+            w, h = MINI_W, MINI_H
+            slot = taskbar_slot(w, h)
+            if slot is None:
+                l, t, r, b = work_area()
+                slot = (r - w - 12, b - h - 12)
+            x, y = slot
+        else:
+            w, h = W, H
+            x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
+        self.canvas.config(width=w, height=h)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        self._last_frame_key = None
+        if self.mini:  # 작업표시줄보다 위에 있도록 재확인 (HWND_TOPMOST, NOSIZE|NOMOVE|NOACTIVATE)
+            _user32.SetWindowPos(self._hwnd(), HWND_TOPMOST, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
 
     def _set(self, key, value):
         self.state[key] = value
@@ -527,6 +605,8 @@ class Widget(tk.Tk):
         if self._hit(e.x, e.y):
             self._drag = None
             return
+        if self.mini:
+            return  # 미니 모드는 작업표시줄에 고정
         self._drag = (e.x_root - self.winfo_x(), e.y_root - self.winfo_y())
 
     def _drag_move(self, e):
@@ -536,8 +616,9 @@ class Widget(tk.Tk):
     def _release(self, e):
         if self._drag:
             self._drag = None
-            self.state["x"], self.state["y"] = self.winfo_x(), self.winfo_y()
-            self._save_state()
+            if not self.mini:
+                self.state["x"], self.state["y"] = self.winfo_x(), self.winfo_y()
+                self._save_state()
             return
         hit = self._hit(e.x, e.y)
         if hit == "close":
@@ -630,6 +711,8 @@ class Widget(tk.Tk):
                 self._update_click_through()
             if self._ticks % 10 == 0:
                 self._check_fullscreen()
+                if self.mini and not self._hidden:
+                    self._apply_geometry()
             if self.banner and time.monotonic() > self.banner[2]:
                 self.banner = None
             self._advance_cats()
@@ -721,9 +804,9 @@ class Widget(tk.Tk):
         return tuple(parts)
 
     def draw(self):
-        key = self._base_key_now()
+        key = (self._base_key_now(), self.mini)
         if key != self._base_key:
-            self._base = self._render_base()
+            self._base = self._render_mini() if self.mini else self._render_base()
             self._base_key = key
         # 고양이 프레임/z 위치가 안 바뀌었으면 화면 갱신 생략 (CPU 절약)
         cat_key = tuple((k, self._anim[k]["frame"], (self._ticks // 6) % 3) for k, *_ in PROVIDERS)
@@ -736,15 +819,51 @@ class Widget(tk.Tk):
         d = ImageDraw.Draw(out)
         half = W // 2
         for i, (pkey, name, accent, body, mark) in enumerate(PROVIDERS):
-            ox = 10 + i * (half - 2)
             pct5 = ((self.usage.get(pkey) or {}).get("primary") or {}).get("used_percent")
             sleeping = pct5 is None or pct5 >= 100
-            self._cat(d, ox, 9, self._anim[pkey]["frame"], body, mark, sleeping)
+            if self.mini:
+                self._cat(d, 8 + i * (MINI_W // 2), 5, self._anim[pkey]["frame"], body, mark, sleeping)
+            else:
+                ox = 10 + i * (half - 2)
+                self._cat(d, ox, 9, self._anim[pkey]["frame"], body, mark, sleeping)
         if os.environ.get("WIDGET_SNAP"):
             out.save(os.environ["WIDGET_SNAP"])
         self._photo = ImageTk.PhotoImage(out)
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self._photo, anchor="nw")
+
+    def _render_mini(self):
+        """작업표시줄용 알약: [고양이] 5h% · 7d%  |  [고양이] 5h% · 7d%"""
+        S = SS
+        img = Image.new("RGB", (MINI_W * S, MINI_H * S), CARD)
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle((0, 0, MINI_W * S - 1, MINI_H * S - 1), radius=(MINI_H // 2) * S,
+                            outline=CARD_EDGE, width=2 * S)
+        self._buttons = {}
+        half = MINI_W // 2
+        for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
+            ox = 8 + i * half
+            u = self.usage.get(key) or {}
+            stale = self._is_stale(key)
+            p5 = (u.get("primary") or {}).get("used_percent")
+            p7 = (u.get("secondary") or {}).get("used_percent")
+            t5 = "–" if p5 is None else f"{int(round(p5))}%"
+            t7 = "–" if p7 is None else f"{int(round(p7))}%"
+            x = ox + 40
+            d.text((x * S, (MINI_H / 2) * S), t5, font=self.f_small,
+                   fill=(C_STALE if stale else pct_color(p5)), anchor="lm")
+            x += d.textlength(t5, font=self.f_small) / S + 4
+            d.text((x * S, (MINI_H / 2) * S), "·", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
+            x += 7
+            d.text((x * S, (MINI_H / 2) * S), t7, font=self.f_tiny,
+                   fill=(C_STALE if stale else pct_color(p7)), anchor="lm")
+            if i == 0:
+                lx = (half + 2) * S
+                d.line((lx, 8 * S, lx, (MINI_H - 8) * S), fill=TRACK, width=2 * S)
+        out = img.resize((MINI_W, MINI_H), Image.LANCZOS)
+        mask = Image.new("L", (MINI_W, MINI_H), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, MINI_W - 1, MINI_H - 1), radius=MINI_H // 2, fill=255)
+        return Image.composite(out, Image.new("RGB", (MINI_W, MINI_H), CHROMA), mask)
 
     def _render_base(self):
         S = SS
