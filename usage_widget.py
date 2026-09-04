@@ -44,7 +44,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -83,18 +83,30 @@ INK = "#4a3f3a"
 INK_SOFT = "#a3928a"
 TRACK = "#f2e7dd"
 C_OK, C_WARN, C_BAD, C_STALE = "#7fd1a8", "#f8c66d", "#f58c8c", "#d9cfc7"
-PROVIDERS = [
+PROVIDERS_ALL = [
     # key, 표시명, 강조색, 고양이 몸색, 고양이 무늬색
     ("claude", "Claude", "#f28c6b", "#f4a460", "#d98a3f"),
     ("codex", "GPT", "#6fbfa3", "#a9b4c2", "#7f8b9b"),
 ]
+PROVIDERS = list(PROVIDERS_ALL)   # 현재 표시 중인 제공자 (apply_layout이 갱신)
 WINDOWS = [("primary", "5시간"), ("secondary", "7일")]
 
 # 레이아웃 (논리 px). 카드는 SS배 슈퍼샘플링 후 축소, 고양이는 원본 도트.
 SS = 2
-W, H = 560, 126
+SEC_W = 278                # 제공자 한 칸 너비 (카드)
+MINI_SEC_W = 128           # 제공자 한 칸 너비 (미니)
+W, H = 4 + SEC_W * 2, 126
 RADIUS = 16
-MINI_W, MINI_H = 256, 34   # 작업표시줄 미니 모드 크기
+MINI_W, MINI_H = MINI_SEC_W * 2, 34   # 작업표시줄 미니 모드 크기
+
+
+def apply_layout(show_gpt=True):
+    """표시할 제공자에 맞춰 카드/미니 폭을 다시 계산한다."""
+    global PROVIDERS, W, MINI_W
+    PROVIDERS = [p for p in PROVIDERS_ALL if show_gpt or p[0] != "codex"]
+    n = max(1, len(PROVIDERS))
+    W = 4 + SEC_W * n
+    MINI_W = MINI_SEC_W * n
 GAUGE = 56
 RING_W = 7
 
@@ -172,10 +184,11 @@ def fmt_remaining(resets_at):
     return f"{m}분 후"
 
 
-def fetch_usage():
+def fetch_usage(keys=("claude", "codex")):
     flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+    prov_arg = "both" if len(keys) > 1 else keys[0]
     out = subprocess.run(
-        [str(CODEXBAR_CLI), "usage", "-p", "both", "--json", "--no-color"],
+        [str(CODEXBAR_CLI), "usage", "-p", prov_arg, "--json", "--no-color"],
         capture_output=True, text=True, timeout=CLI_TIMEOUT, creationflags=flags,
         encoding="utf-8", errors="replace",
     )
@@ -379,7 +392,7 @@ class Popup(tk.Toplevel):
         self.master_widget = master
         self.text, self.color = text, color
         self.body, self.mark = "#f4a460", "#d98a3f"
-        for k, n, a, b, m in PROVIDERS:
+        for k, n, a, b, m in PROVIDERS_ALL:
             if k == prov:
                 self.body, self.mark = b, m
         self.overrideredirect(True)
@@ -472,7 +485,8 @@ class Widget(tk.Tk):
         self._last_frame_key = None
         self._hidden = False
         self.mini = bool(self.state.get("mini", False))
-        self._anim = {k: {"frame": 0, "next": 0.0} for k, *_ in PROVIDERS}
+        self._anim = {k: {"frame": 0, "next": 0.0} for k, *_ in PROVIDERS_ALL}
+        apply_layout(self.state.get("show_gpt", True))
         self._buttons = {}
 
         self.f_title = font("Paperlogy-7Bold.ttf", 19)
@@ -518,6 +532,8 @@ class Widget(tk.Tk):
         kw = dict(tearoff=0, bg=CARD, fg=INK, activebackground="#ffe9d6", activeforeground=INK)
         self.menu = tk.Menu(self, **kw)
         self.menu.add_command(label="지금 새로고침", command=self.refresh)
+        self.gpt_var = tk.BooleanVar(value=self.state.get("show_gpt", True))
+        self.menu.add_checkbutton(label="GPT(Codex) 표시", variable=self.gpt_var, command=self._toggle_gpt)
         self.mini_var = tk.BooleanVar(value=self.mini)
         self.menu.add_checkbutton(label="작업표시줄 미니 모드 (더블클릭으로 전환)", variable=self.mini_var,
                                   command=lambda: self.toggle_mini(self.mini_var.get()))
@@ -553,6 +569,14 @@ class Widget(tk.Tk):
                                   command=self._toggle_autostart)
         self.menu.add_separator()
         self.menu.add_command(label="종료", command=self.destroy)
+
+    def _toggle_gpt(self):
+        v = self.gpt_var.get()
+        self._set("show_gpt", v)
+        apply_layout(v)
+        self._base_key = None
+        self._apply_geometry()
+        self.refresh()
 
     def toggle_mini(self, value=None):
         self.mini = (not self.mini) if value is None else bool(value)
@@ -670,7 +694,7 @@ class Widget(tk.Tk):
 
     def _fetch_bg(self):
         try:
-            data, errors = fetch_usage()
+            data, errors = fetch_usage(tuple(k for k, *_ in PROVIDERS))
             self.after(0, self._apply, data, errors, None)
         except Exception as ex:  # noqa: BLE001
             self.after(0, self._apply, None, {}, str(ex))
@@ -878,14 +902,13 @@ class Widget(tk.Tk):
 
         out = self._base.copy()
         d = ImageDraw.Draw(out)
-        half = W // 2
         for i, (pkey, name, accent, body, mark) in enumerate(PROVIDERS):
             pct5 = ((self.usage.get(pkey) or {}).get("primary") or {}).get("used_percent")
             sleeping = pct5 is None or pct5 >= 100
             if self.mini:
-                self._cat_head(d, 9 + i * (MINI_W // 2), 8, self._anim[pkey]["frame"], body, mark, sleeping)
+                self._cat_head(d, 9 + i * MINI_SEC_W, 8, self._anim[pkey]["frame"], body, mark, sleeping)
             else:
-                ox = 10 + i * (half - 2)
+                ox = 10 + i * SEC_W
                 self._cat(d, ox, 9, self._anim[pkey]["frame"], body, mark, sleeping)
         if os.environ.get("WIDGET_SNAP"):
             out.save(os.environ["WIDGET_SNAP"])
@@ -901,7 +924,7 @@ class Widget(tk.Tk):
         d.rounded_rectangle((0, 0, MINI_W * S - 1, MINI_H * S - 1), radius=(MINI_H // 2) * S,
                             outline=CARD_EDGE, width=2 * S)
         self._buttons = {}
-        half = MINI_W // 2
+        half = MINI_SEC_W
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
             ox = 8 + i * half
             u = self.usage.get(key) or {}
@@ -918,8 +941,8 @@ class Widget(tk.Tk):
             x += 7
             d.text((x * S, (MINI_H / 2) * S), t7, font=self.f_small,
                    fill=(C_STALE if stale else pct_color(p7)), anchor="lm")
-            if i == 0:
-                lx = (half + 2) * S
+            if i < len(PROVIDERS) - 1:
+                lx = (ox + half - 6) * S
                 d.line((lx, 8 * S, lx, (MINI_H - 8) * S), fill=TRACK, width=2 * S)
         out = img.resize((MINI_W, MINI_H), Image.LANCZOS)
         mask = Image.new("L", (MINI_W, MINI_H), 0)
@@ -933,9 +956,9 @@ class Widget(tk.Tk):
         d.rounded_rectangle((0, 0, W * S - 1, H * S - 1), radius=RADIUS * S, outline=CARD_EDGE, width=2 * S)
 
         self._buttons = {}
-        half = W // 2
+        half = SEC_W
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
-            ox = 10 + i * (half - 2)
+            ox = 10 + i * half
             u = self.usage.get(key) or {}
             stale = self._is_stale(key)
 
@@ -968,8 +991,8 @@ class Widget(tk.Tk):
                         d.ellipse(((gx + GAUGE + 7) * S, (gy + 48) * S, (gx + GAUGE + 12) * S, (gy + 53) * S), fill=hint[1])
                         d.text(((gx + GAUGE + 15) * S, (gy + 43) * S), hint[0], font=self.f_tiny, fill=hint[1])
 
-            if i == 0:
-                lx = (half + 2) * S
+            if i < len(PROVIDERS) - 1:
+                lx = (ox + half - 6) * S
                 d.line((lx, 12 * S, lx, (H - 12) * S), fill=TRACK, width=2 * S)
 
         # 상태 / 알림 배너 (우하단)
