@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -111,10 +111,13 @@ MINI_W, MINI_H = MINI_SEC_W * 2, 40   # 작업표시줄 미니 모드 크기 (�
 MINI_NUM_Y = 26                       # 미니 모드 퍼센트 줄의 세로 중심
 
 
-def apply_layout(show_gpt=True):
-    """표시할 제공자에 맞춰 카드/미니 폭을 다시 계산한다."""
+def apply_layout(show_claude=True, show_gpt=True):
+    """표시할 제공자에 맞춰 카드/미니 폭을 다시 계산한다. 둘 다 끄면 Claude는 남긴다."""
     global PROVIDERS, W, MINI_W
-    PROVIDERS = [p for p in PROVIDERS_ALL if show_gpt or p[0] != "codex"]
+    flags = {"claude": show_claude, "codex": show_gpt}
+    if not any(flags.values()):
+        flags["claude"] = True
+    PROVIDERS = [p for p in PROVIDERS_ALL if flags.get(p[0], True)]
     n = max(1, len(PROVIDERS))
     W = 4 + SEC_W * n
     MINI_W = MINI_SEC_W * n
@@ -555,7 +558,7 @@ class Widget(tk.Tk):
         self._hidden = False
         self.mini = bool(self.state.get("mini", False))
         self._anim = {k: {"frame": 0, "next": 0.0} for k, *_ in PROVIDERS_ALL}
-        apply_layout(self.state.get("show_gpt", True))
+        apply_layout(self.state.get("show_claude", True), self.state.get("show_gpt", True))
         self._buttons = {}
 
         self.f_title = font("Paperlogy-7Bold.ttf", 19)
@@ -608,8 +611,10 @@ class Widget(tk.Tk):
         for key, label in CHAR_STYLES:
             char_menu.add_radiobutton(label=label, value=key, variable=self.char_var, command=self._set_char)
         self.menu.add_cascade(label="캐릭터 스타일", menu=char_menu)
+        self.claude_var = tk.BooleanVar(value=self.state.get("show_claude", True))
+        self.menu.add_checkbutton(label="Claude 표시", variable=self.claude_var, command=self._toggle_providers)
         self.gpt_var = tk.BooleanVar(value=self.state.get("show_gpt", True))
-        self.menu.add_checkbutton(label="GPT(Codex) 표시", variable=self.gpt_var, command=self._toggle_gpt)
+        self.menu.add_checkbutton(label="GPT(Codex) 표시", variable=self.gpt_var, command=self._toggle_providers)
         self.mini_var = tk.BooleanVar(value=self.mini)
         self.menu.add_checkbutton(label="작업표시줄 미니 모드 (더블클릭으로 전환)", variable=self.mini_var,
                                   command=lambda: self.toggle_mini(self.mini_var.get()))
@@ -659,10 +664,14 @@ class Widget(tk.Tk):
     def char(self):
         return self.state.get("char", CHAR_DEFAULT)
 
-    def _toggle_gpt(self):
-        v = self.gpt_var.get()
-        self._set("show_gpt", v)
-        apply_layout(v)
+    def _toggle_providers(self):
+        c, g = self.claude_var.get(), self.gpt_var.get()
+        if not c and not g:          # 둘 다 끄면 아무것도 안 남으므로 마지막 하나는 되돌림
+            self.claude_var.set(True)
+            c = True
+        self.state["show_claude"], self.state["show_gpt"] = c, g
+        self._save_state()
+        apply_layout(c, g)
         self._base_key = None
         self._apply_geometry()
         self.refresh()
