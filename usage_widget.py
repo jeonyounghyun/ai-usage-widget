@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -184,9 +184,9 @@ def pct_color(p):
     return C_OK
 
 
-def fmt_remaining(resets_at):
+def fmt_remaining(resets_at, pct=None):
     if not resets_at:
-        return ""
+        return "다음 사용 시 시작" if pct is not None and pct <= 0 else ""
     try:
         t = datetime.fromisoformat(resets_at.replace("Z", "+00:00"))
     except ValueError:
@@ -847,7 +847,8 @@ class Widget(tk.Tk):
                 if prev_pct is None:
                     continue
                 label = f"{names.get(prov, prov)} {wname}"
-                if prev_reset and reset and reset != prev_reset and pct < prev_pct:
+                # 사용률은 창 안에서 줄지 않으므로, 줄었으면 리셋. (Claude는 리셋 후 resets_at이 None이라 시각 비교로는 못 잡음)
+                if pct < prev_pct - 0.5:
                     self._alert(f"{label} 한도가 리셋됐어요 ({int(pct)}%)", C_OK, prov)
                 elif prev_pct < 100 <= pct:
                     self._alert(f"{label} 한도 소진 · {fmt_remaining(reset)} 리셋", C_BAD, prov)
@@ -1028,7 +1029,7 @@ class Widget(tk.Tk):
             u = self.usage.get(key) or {}
             for wkey, _ in WINDOWS:
                 win = u.get(wkey) or {}
-                parts.append((win.get("used_percent"), fmt_remaining(win.get("resets_at"))))
+                parts.append((win.get("used_percent"), fmt_remaining(win.get("resets_at"), win.get("used_percent"))))
             fb = extra_window(u, "fable")
             parts.append((fb.get("used_percent"), u.get("login_method"), self._is_stale(key)))
         parts.append(self._status()[:2])
@@ -1132,7 +1133,7 @@ class Widget(tk.Tk):
                 gx, gy = ox + j * 138, 62
                 self._gauge(d, gx, gy, win.get("used_percent"), stale)
                 d.text(((gx + GAUGE + 6) * S, (gy + 9) * S), wname, font=self.f_small, fill=INK)
-                d.text(((gx + GAUGE + 6) * S, (gy + 27) * S), fmt_remaining(win.get("resets_at")),
+                d.text(((gx + GAUGE + 6) * S, (gy + 27) * S), fmt_remaining(win.get("resets_at"), win.get("used_percent")),
                        font=self.f_tiny, fill=INK_SOFT)
                 if self.state.get("pace", False) and not stale:
                     hint = pace_hint(u, wkey)
