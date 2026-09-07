@@ -56,19 +56,18 @@ Win-CodexBar 트레이 앱은 켜 둘 필요 없고, 설치만 되어 있으면 
 
 ### 원클릭: `install.bat` 더블클릭
 
-저장소를 내려받아(ZIP 또는 `git clone`) 폴더 안의 **`install.bat`** 을 더블클릭하면 아래를 자동으로 합니다.
+저장소를 내려받아(ZIP 또는 `git clone`) 폴더 안의 **`install.bat`** 을 더블클릭하면 끝입니다. Claude Code나 Codex를 쓰지 않는 사람도 됩니다. claude.ai 채팅은 Claude Code와 한도를 공유하므로 **로그인만** 해 두면 채팅 사용량이 보입니다.
 
-1. Python이 없으면 winget으로 설치
-2. Pillow 설치
-3. Win-CodexBar가 없으면 winget으로 설치
-4. 바탕화면에 "AI Usage Widget" 바로가기 생성 (더블클릭으로 켜고 끔)
-5. Windows 시작 시 자동 실행 여부 질문 (Y/N)
-6. 위젯 실행
+설치 스크립트가 하는 일:
 
-끝나면 Win-CodexBar 설정 창이 열립니다. 사람이 직접 해야 하는 건 두 가지뿐입니다.
+1. Python이 없으면 winget으로 설치, Pillow 설치
+2. Win-CodexBar가 없으면 winget으로 설치
+3. Claude Code가 없으면 설치하고, 로그인이 없으면 **로그인 화면을 띄움** (브라우저에서 구독 계정으로 로그인 → 터미널에 `/exit`)
+4. "GPT 사용량도 볼까요?" 질문 → Y면 Codex CLI 설치·로그인(브라우저 한 번), N이면 위젯에서 GPT를 숨김
+5. Win-CodexBar 설정을 자동으로 맞춤: Claude 토큰 읽기 허용, 표시할 제공자, 트레이 앱 자동 실행·플로팅 바 끔
+6. 바탕화면 바로가기 생성, 자동 실행 여부 질문, 위젯 실행
 
-- 터미널에서 `claude`를 한 번 실행해 로그인 상태 확인
-- Win-CodexBar 설정 → Providers → Claude → *Allow reading Claude Code's credentials* 체크 (이후 앱은 닫아도 됨)
+사람이 하는 건 브라우저 로그인(Claude 1회, GPT를 보면 1회 더)과 Y/N 답 두 번뿐입니다.
 
 ### 수동 설치
 
@@ -94,7 +93,7 @@ Win-CodexBar 트레이 앱은 켜 둘 필요 없고, 설치만 되어 있으면 
 
 ### Win-CodexBar 설정 안내
 
-위젯은 Win-CodexBar가 만든 명령줄 도구(`codexbar-cli.exe`)로 사용량을 읽습니다. 처음 한 번만 아래 설정을 해 두면 이후 트레이 앱은 켜 둘 필요가 없습니다.
+위젯은 Win-CodexBar가 만든 명령줄 도구(`codexbar-cli.exe`)로 사용량을 읽습니다. **`install.bat`이 아래 설정을 자동으로 처리**하므로(설정 파일을 직접 써 넣음) 보통은 손댈 일이 없습니다. 자동 설정이 실패했거나 CodexBar 업데이트로 설정이 초기화됐을 때만 아래를 따라 하세요. 트레이 앱은 켜 둘 필요가 없습니다.
 
 1. **실행**: 시작 메뉴에서 CodexBar 실행 → 작업표시줄 시계 옆 트레이 아이콘이 생김
 2. **설정 열기**: 트레이 아이콘 우클릭 → *Settings*(설정)
