@@ -93,7 +93,15 @@ if /i "!ANS!"=="Y" (
     set "PROVIDERS=claude,codex"
     where codex >nul 2>&1
     if errorlevel 1 (
+        where npm >nul 2>&1
+        if errorlevel 1 (
+            echo        Node.js not found - installing via winget ^(needed for Codex CLI^) ...
+            winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
+            rem make the freshly installed Node.js visible in this window
+            set "PATH=%ProgramFiles%\nodejs;%APPDATA%\npm;!PATH!"
+        )
         where npm >nul 2>&1 && (echo        Installing Codex CLI ... & call npm install -g @openai/codex >nul)
+        set "PATH=%APPDATA%\npm;!PATH!"
     )
     where codex >nul 2>&1
     if errorlevel 1 (
