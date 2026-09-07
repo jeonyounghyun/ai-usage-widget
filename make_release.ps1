@@ -7,7 +7,7 @@ $name = "ai-usage-widget-v$ver"
 $stage = Join-Path $env:TEMP $name
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory $stage | Out-Null
-Copy-Item install.bat, toggle_widget.bat, usage_widget.py, toast.ps1, README.md, LICENSE $stage
+Copy-Item install.bat, toggle_widget.bat, usage_widget.py, toast.ps1, doctor.py, doctor.bat, README.md, LICENSE $stage
 New-Item -ItemType Directory (Join-Path $stage "docs") | Out-Null
 Copy-Item docs\*.png (Join-Path $stage "docs")
 New-Item -ItemType Directory dist -Force | Out-Null

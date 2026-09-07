@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.1.3"
+VERSION = "1.2.0"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -80,7 +80,8 @@ CONFIG_PATH = Path(__file__).with_name("widget_state.json")
 UPDATE_REPO = "jeonyounghyun/ai-usage-widget"
 UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 UPDATE_CHECK_SEC = 24 * 3600          # 자동 업데이트 확인 주기
-UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "README.md", "LICENSE")
+UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "doctor.py", "doctor.bat",
+                "README.md", "LICENSE")
 STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 STARTUP_BAT = STARTUP_DIR / "ai-usage-widget.bat"
 FONT_DIR = Path("C:/Windows/Fonts")

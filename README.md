@@ -113,6 +113,28 @@ Win-CodexBar 트레이 앱은 켜 둘 필요 없고, 설치만 되어 있으면 
 
 ### 문제 해결
 
+숫자가 안 뜨면 먼저 **`doctor.bat`** 을 더블클릭하세요. Python·Pillow·Win-CodexBar·로그인 파일을 순서대로 점검하고, 위젯과 같은 방식으로 실제 조회를 해 본 뒤 막힌 곳과 해결 방법을 한글로 알려줍니다.
+
+#### 처음 설치 시 오류 메시지별 해결
+
+| 어디서 | 메시지 | 뜻 / 해결 |
+|---|---|---|
+| Win-CodexBar, doctor | `OAuth error: Reading Claude Code's credentials is off. Enable "Allow reading Claude Code's credentials"…` | Claude 토큰 읽기 허용이 꺼짐. 트레이 아이콘 우클릭 → Settings → 제공업체 → Claude → 체크 |
+| Win-CodexBar, doctor | `OAuth access token has expired. Re-authenticate to continue.` (401) | Claude 토큰 만료. 터미널에서 `claude` 한 번 실행하면 갱신됨 |
+| Win-CodexBar, doctor | `Claude OAuth usage endpoint is rate limited. Retrying…` | 조회가 너무 잦아 잠시 차단. 5~10분 뒤 자동 회복. 트레이 앱이 켜져 있으면 종료 (위젯과 중복 조회) |
+| Win-CodexBar, doctor | `Claude usage failed from all configured sources. Web: No cookies…; OAuth: …; CLI: Parse error…` | 세 경로 모두 실패. 핵심은 가운데 OAuth 부분의 문구 → 위 두 줄 중 해당하는 것 적용. Web/CLI 부분은 무시 |
+| Win-CodexBar | `Chromium App-Bound Encryption (ABE) detected: all N cookies failed to decrypt` | 앱이 브라우저 쿠키를 읽으려다 실패한 안내. 위젯은 쿠키를 쓰지 않으므로 무시 |
+| Win-CodexBar | `Provider not installed: Not logged in to Gemini. Run 'gemini'…` | Gemini CLI 미설치 안내. 개인 계정용 Gemini CLI는 2026-06에 종료됐으므로 설치하지 말고 제공업체에서 Gemini 체크 해제 |
+| Win-CodexBar, doctor | Codex `Not logged in` / `auth.json` 없음 | Codex CLI 미로그인. `codex login` 실행. Codex를 안 쓰면 위젯 우클릭 → *GPT(Codex) 표시* 해제 |
+| 터미널 | `'claude'은(는) 내부 또는 외부 명령… 아닙니다` / `not in your PATH` | Claude Code는 깔렸는데 PATH 미등록. 아래 한 줄 실행 후 터미널 재시작:<br>`[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path","User") + ";$env:USERPROFILE\.local\bin", "User")` |
+| 터미널 (claude 로그인) | 로그인 방식 선택 화면 | **"Claude account with subscription"** 선택. API 키 방식으로 로그인하면 한도 개념이 없어 위젯에 숫자가 안 뜸 |
+| 위젯 | Claude 자리 `–`, "Claude 조회 지연 (값 없음)" | 위 Claude 항목 중 하나. `doctor.bat`으로 어느 것인지 확인 |
+| 위젯 | 숫자는 있는데 "N분 전 값" (주황) | 10분 넘게 조회 실패 중. 대개 rate limit → 기다리면 회복. 1시간 넘으면 회색으로 바뀜 |
+| install.bat | `Python not found - installing via winget` 후 실패 | winget이 없는 PC. python.org에서 직접 설치 (Add to PATH 체크) 후 install.bat 재실행 |
+| install.bat / 바로가기 | Windows "PC 보호" SmartScreen 경고 | 서명 없는 배치 파일이라 뜸. "추가 정보" → "실행" |
+
+#### 증상별
+
 | 증상 | 원인 / 해결 |
 |---|---|
 | "codexbar-cli.exe를 찾을 수 없습니다" | 3번 미설치 |
