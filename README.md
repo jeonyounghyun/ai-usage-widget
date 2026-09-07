@@ -92,12 +92,31 @@ Win-CodexBar 트레이 앱은 켜 둘 필요 없고, 설치만 되어 있으면 
 6. (선택) `toggle_widget.bat`의 바로가기를 바탕화면에 만들면 더블클릭으로 켜고 끌 수 있고,
    위젯 우클릭 → *Windows 시작 시 자동 실행*으로 부팅 시 자동으로 뜹니다.
 
+### Win-CodexBar 설정 안내
+
+위젯은 Win-CodexBar가 만든 명령줄 도구(`codexbar-cli.exe`)로 사용량을 읽습니다. 처음 한 번만 아래 설정을 해 두면 이후 트레이 앱은 켜 둘 필요가 없습니다.
+
+1. **실행**: 시작 메뉴에서 CodexBar 실행 → 작업표시줄 시계 옆 트레이 아이콘이 생김
+2. **설정 열기**: 트레이 아이콘 우클릭 → *Settings*(설정)
+3. **Claude 읽기 허용** (필수): 상단 탭 **제공업체(Providers)** → *Claude* 항목 → **"Allow reading Claude Code's credentials"** 체크
+   - 이 옵션이 꺼져 있으면 Claude 자리가 "–"이고 "조회 지연"만 뜹니다
+   - 위젯은 여기서 허용한 토큰 파일(`~/.claude/.credentials.json`)만 읽고, 브라우저 쿠키나 `claude` 명령은 쓰지 않습니다
+4. **GPT(Codex)**: 별도 설정 없음. Codex CLI에 로그인되어 있으면 자동으로 읽힙니다. Codex를 안 쓰면 위젯 우클릭 → *GPT(Codex) 표시* 해제
+5. **쓰지 않는 제공자 끄기** (선택): 같은 탭에서 Gemini, Copilot, Cursor 등 체크 해제. 위젯에는 영향 없고 CodexBar 앱 안의 안내 문구만 사라집니다
+6. **트레이 앱 종료 및 자동 실행 해제** (권장): 설정을 마쳤으면 트레이 아이콘 우클릭 → *Quit*. 부팅 때 다시 켜지지 않게 하려면 터미널에서
+   ```
+   "%LOCALAPPDATA%\Programs\CodexBar\codexbar-cli.exe" autostart --disable
+   ```
+   트레이 앱과 위젯이 동시에 조회하면 Anthropic 조회 API가 잠시 차단될 수 있어서, 위젯만 쓰는 편이 안정적입니다
+
+> CodexBar를 업데이트하면 설정이 초기화되는 경우가 있습니다. 갑자기 Claude가 "조회 지연"만 뜨면 3번을 다시 확인하세요.
+
 ### 문제 해결
 
 | 증상 | 원인 / 해결 |
 |---|---|
 | "codexbar-cli.exe를 찾을 수 없습니다" | 3번 미설치 |
-| Claude 자리가 "–", "조회 지연" | 3번의 자격증명 허용이 안 됐거나 Claude Code 미로그인. 터미널에서 `claude` 한 번 실행 |
+| Claude 자리가 "–", "조회 지연" | Win-CodexBar의 자격증명 허용이 안 됐거나(위 설정 안내 3번) Claude Code 미로그인. 터미널에서 `claude` 한 번 실행 |
 | GPT 자리가 "–" | Codex CLI를 안 쓰면 정상. 우클릭 → *GPT(Codex) 표시* 체크 해제하면 Claude만 남고 카드가 절반 폭으로 줄어듦 |
 | 글씨체가 다름 | Paperlogy, Pretendard 폰트가 없으면 맑은 고딕으로 대체. 같은 모양을 원하면 두 폰트 설치 |
 | 위젯이 안 뜨는데 오류도 없음 | 폴더의 `widget.log` 확인 |
