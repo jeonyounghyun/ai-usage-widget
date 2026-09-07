@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -107,7 +107,8 @@ SEC_W = 278                # 제공자 한 칸 너비 (카드)
 MINI_SEC_W = 128           # 제공자 한 칸 너비 (미니)
 W, H = 4 + SEC_W * 2, 126
 RADIUS = 16
-MINI_W, MINI_H = MINI_SEC_W * 2, 34   # 작업표시줄 미니 모드 크기
+MINI_W, MINI_H = MINI_SEC_W * 2, 40   # 작업표시줄 미니 모드 크기 (라벨 1줄 + 퍼센트 1줄)
+MINI_NUM_Y = 26                       # 미니 모드 퍼센트 줄의 세로 중심
 
 
 def apply_layout(show_gpt=True):
@@ -1028,7 +1029,7 @@ class Widget(tk.Tk):
             pct5 = ((self.usage.get(pkey) or {}).get("primary") or {}).get("used_percent")
             sleeping = pct5 is None or pct5 >= 100
             if self.mini:
-                self._cat_head(d, 9 + i * MINI_SEC_W, 8, self._anim[pkey]["frame"], body, mark, sleeping)
+                self._cat_head(d, 9 + i * MINI_SEC_W, 11, self._anim[pkey]["frame"], body, mark, sleeping)
             else:
                 ox = 10 + i * SEC_W
                 self._cat(d, ox, 9, self._anim[pkey]["frame"], body, mark, sleeping)
@@ -1056,16 +1057,17 @@ class Widget(tk.Tk):
             t5 = "–" if p5 is None else f"{int(round(p5))}%"
             t7 = "–" if p7 is None else f"{int(round(p7))}%"
             x = ox + 30
-            d.text((x * S, (MINI_H / 2) * S), t5, font=self.f_num,
+            d.text((x * S, 4 * S), name, font=self.f_tiny, fill=accent)           # 서비스 라벨 (윗줄)
+            d.text((x * S, MINI_NUM_Y * S), t5, font=self.f_num,
                    fill=(C_STALE if stale else pct_color(p5)), anchor="lm")
             x += d.textlength(t5, font=self.f_num) / S + 4
-            d.text((x * S, (MINI_H / 2) * S), "·", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
+            d.text((x * S, MINI_NUM_Y * S), "·", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
             x += 7
-            d.text((x * S, (MINI_H / 2) * S), t7, font=self.f_small,
+            d.text((x * S, MINI_NUM_Y * S), t7, font=self.f_small,
                    fill=(C_STALE if stale else pct_color(p7)), anchor="lm")
             if i < len(PROVIDERS) - 1:
                 lx = (ox + half - 6) * S
-                d.line((lx, 8 * S, lx, (MINI_H - 8) * S), fill=TRACK, width=2 * S)
+                d.line((lx, 9 * S, lx, (MINI_H - 9) * S), fill=TRACK, width=2 * S)
         out = img.resize((MINI_W, MINI_H), Image.LANCZOS)
         mask = Image.new("L", (MINI_W, MINI_H), 0)
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, MINI_W - 1, MINI_H - 1), radius=MINI_H // 2, fill=255)
@@ -1181,7 +1183,7 @@ class Widget(tk.Tk):
                     d.rectangle((x0, y0, x0 + px - 1, y0 + px - 1), fill=col)
         if sleeping:
             phase = (self._ticks // 6) % 3
-            d.text((x + 11 * px - 2, y - 6 + phase * 2), "z", font=self.f_z, fill=INK_SOFT)
+            d.text((x + 6 * px, y - 9 + phase * 2), "z", font=self.f_z, fill=INK_SOFT)  # 머리 위 중앙 (라벨과 겹치지 않게)
 
     def _cat(self, d, x, y, fi, body, mark, sleeping, px=CAT_PX):
         colors = {"b": body, "s": mark, "e": "#2f2a28", "p": "#ffb7c5", "m": "#2f2a28", "-": "#2f2a28"}
