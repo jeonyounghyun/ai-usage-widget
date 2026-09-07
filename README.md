@@ -126,6 +126,7 @@ Win-CodexBar 트레이 앱은 켜 둘 필요 없고, 설치만 되어 있으면 
 | Win-CodexBar | `Chromium App-Bound Encryption (ABE) detected: all N cookies failed to decrypt` | 앱이 브라우저 쿠키를 읽으려다 실패한 안내. 위젯은 쿠키를 쓰지 않으므로 무시 |
 | Win-CodexBar | `Provider not installed: Not logged in to Gemini. Run 'gemini'…` | Gemini CLI 미설치 안내. 개인 계정용 Gemini CLI는 2026-06에 종료됐으므로 설치하지 말고 제공업체에서 Gemini 체크 해제 |
 | Win-CodexBar, doctor | Codex `Not logged in` / `auth.json` 없음 | Codex CLI 미로그인. `codex login` 실행. Codex를 안 쓰면 위젯 우클릭 → *GPT(Codex) 표시* 해제 |
+| Win-CodexBar (Codex 페이지) | 상단 `Authentication required`, `Codex account not found.`, 계정 옆 `Ambient · No usage data` | Codex CLI 로그인이 없거나 만료. 터미널에서 `codex login` → 이 화면의 *Refresh usage*. `codex` 명령이 없으면 `npm install -g @openai/codex` 먼저. 안 쓰면 왼쪽 목록에서 Codex 체크 해제 |
 | 터미널 | `'claude'은(는) 내부 또는 외부 명령… 아닙니다` / `not in your PATH` | Claude Code는 깔렸는데 PATH 미등록. 아래 한 줄 실행 후 터미널 재시작:<br>`[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path","User") + ";$env:USERPROFILE\.local\bin", "User")` |
 | 터미널 (claude 로그인) | 로그인 방식 선택 화면 | **"Claude account with subscription"** 선택. API 키 방식으로 로그인하면 한도 개념이 없어 위젯에 숫자가 안 뜸 |
 | 위젯 | Claude 자리 `–`, "Claude 조회 지연 (값 없음)" | 위 Claude 항목 중 하나. `doctor.bat`으로 어느 것인지 확인 |
