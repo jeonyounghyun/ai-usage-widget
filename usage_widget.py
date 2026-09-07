@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -96,7 +96,7 @@ C_OK, C_WARN, C_BAD, C_STALE = "#7fd1a8", "#f8c66d", "#f58c8c", "#d9cfc7"
 PROVIDERS_ALL = [
     # key, 표시명, 강조색, 고양이 몸색, 고양이 무늬색
     ("claude", "Claude", "#f28c6b", "#f4a460", "#d98a3f"),
-    ("codex", "GPT", "#6fbfa3", "#a9b4c2", "#7f8b9b"),
+    ("codex", "GPT", "#4a4a4a", "#d3cfc9", "#7d7d7d"),   # OpenAI 브랜드(흑백)에 맞춰 차콜 + 연회색 고양이
 ]
 PROVIDERS = list(PROVIDERS_ALL)   # 현재 표시 중인 제공자 (apply_layout이 갱신)
 WINDOWS = [("primary", "5시간"), ("secondary", "7일")]
@@ -169,7 +169,7 @@ CHAR_DEFAULT = "smooth"
 # 부드러운 고양이 색 (몸, 무늬, 볼터치) - GPT는 브랜드 민트 계열로
 SMOOTH_COLORS = {
     "claude": ("#f6b27a", "#e08c4a", "#ffb7c5"),
-    "codex": ("#b6dfcf", "#7cc4aa", "#ffc9d4"),
+    "codex": ("#d9d5cf", "#7d7d7d", "#ffc9d4"),
 }
 
 
