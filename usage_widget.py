@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.0.5"
+VERSION = "1.1.0"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -162,6 +162,15 @@ CAT_HEAD = [
 CAT_HEAD_SLEEP = [r.replace("e", "-") for r in CAT_HEAD]
 CAT_HEAD_BOB = [0, -1, 0, 1]
 CAT_PX_MINI = 2
+
+# 캐릭터 스타일: "smooth"(부드러운 벡터 고양이, 기본) / "pixel"(도트) / "none"
+CHAR_STYLES = [("smooth", "부드러운 고양이"), ("pixel", "도트 고양이"), ("none", "없음")]
+CHAR_DEFAULT = "smooth"
+# 부드러운 고양이 색 (몸, 무늬, 볼터치) - GPT는 브랜드 민트 계열로
+SMOOTH_COLORS = {
+    "claude": ("#f6b27a", "#e08c4a", "#ffb7c5"),
+    "codex": ("#b6dfcf", "#7cc4aa", "#ffc9d4"),
+}
 
 
 # ---------------------------------------------------------------- 유틸
@@ -442,6 +451,7 @@ class Popup(tk.Toplevel):
         super().__init__(master)
         self.master_widget = master
         self.text, self.color = text, color
+        self.prov = prov
         self.on_click, self.seconds = on_click, seconds
         self.body, self.mark = "#f4a460", "#d98a3f"
         for k, n, a, b, m in PROVIDERS_ALL:
@@ -490,7 +500,8 @@ class Popup(tk.Toplevel):
         mask = Image.new("L", (POP_W, POP_H), 0)
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, POP_W - 1, POP_H - 1), radius=16, fill=255)
         out = Image.composite(out, Image.new("RGB", (POP_W, POP_H), CHROMA), mask)
-        w._cat(ImageDraw.Draw(out), 22, 30, self._frame, self.body, self.mark, False, px=CAT_PX_POPUP)
+        if w.char != "none":
+            w._char(out, 22, 26, self._frame, self.prov, self.body, self.mark, False, kind="body", scale=1.5)
         return out
 
     def _anim(self):
@@ -592,6 +603,11 @@ class Widget(tk.Tk):
         kw = dict(tearoff=0, bg=CARD, fg=INK, activebackground="#ffe9d6", activeforeground=INK)
         self.menu = tk.Menu(self, **kw)
         self.menu.add_command(label="지금 새로고침", command=self.refresh)
+        char_menu = tk.Menu(self.menu, **kw)
+        self.char_var = tk.StringVar(value=self.state.get("char", CHAR_DEFAULT))
+        for key, label in CHAR_STYLES:
+            char_menu.add_radiobutton(label=label, value=key, variable=self.char_var, command=self._set_char)
+        self.menu.add_cascade(label="캐릭터 스타일", menu=char_menu)
         self.gpt_var = tk.BooleanVar(value=self.state.get("show_gpt", True))
         self.menu.add_checkbutton(label="GPT(Codex) 표시", variable=self.gpt_var, command=self._toggle_gpt)
         self.mini_var = tk.BooleanVar(value=self.mini)
@@ -634,6 +650,14 @@ class Widget(tk.Tk):
         self.menu.add_command(label=f"지금 업데이트 확인 (현재 v{VERSION})", command=lambda: self.check_update(manual=True))
         self.menu.add_separator()
         self.menu.add_command(label="종료", command=self.destroy)
+
+    def _set_char(self):
+        self._set("char", self.char_var.get())
+        self._base_key = None
+
+    @property
+    def char(self):
+        return self.state.get("char", CHAR_DEFAULT)
 
     def _toggle_gpt(self):
         v = self.gpt_var.get()
@@ -1008,7 +1032,7 @@ class Widget(tk.Tk):
             fb = extra_window(u, "fable")
             parts.append((fb.get("used_percent"), u.get("login_method"), self._is_stale(key)))
         parts.append(self._status()[:2])
-        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), getattr(self, "_ct_now", False)))
+        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), getattr(self, "_ct_now", False), self.char))
         return tuple(parts)
 
     def draw(self):
@@ -1024,15 +1048,15 @@ class Widget(tk.Tk):
         self._last_frame_key = frame_key
 
         out = self._base.copy()
-        d = ImageDraw.Draw(out)
         for i, (pkey, name, accent, body, mark) in enumerate(PROVIDERS):
             pct5 = ((self.usage.get(pkey) or {}).get("primary") or {}).get("used_percent")
             sleeping = pct5 is None or pct5 >= 100
+            fi = self._anim[pkey]["frame"]
             if self.mini:
-                self._cat_head(d, 9 + i * MINI_SEC_W, 11, self._anim[pkey]["frame"], body, mark, sleeping)
+                self._char(out, 8 + i * MINI_SEC_W, 8, fi, pkey, body, mark, sleeping, kind="head", scale=1.0)
             else:
                 ox = 10 + i * SEC_W
-                self._cat(d, ox, 9, self._anim[pkey]["frame"], body, mark, sleeping)
+                self._char(out, ox - 2, 8, fi, pkey, body, mark, sleeping, kind="body", scale=0.85)
         if os.environ.get("WIDGET_SNAP"):
             out.save(os.environ["WIDGET_SNAP"])
         self._photo = ImageTk.PhotoImage(out)
@@ -1056,7 +1080,7 @@ class Widget(tk.Tk):
             p7 = (u.get("secondary") or {}).get("used_percent")
             t5 = "–" if p5 is None else f"{int(round(p5))}%"
             t7 = "–" if p7 is None else f"{int(round(p7))}%"
-            x = ox + 30
+            x = ox + (30 if self.char != "none" else 4)
             d.text((x * S, 4 * S), name, font=self.f_tiny, fill=accent)           # 서비스 라벨 (윗줄)
             d.text((x * S, MINI_NUM_Y * S), t5, font=self.f_num,
                    fill=(C_STALE if stale else pct_color(p5)), anchor="lm")
@@ -1086,16 +1110,17 @@ class Widget(tk.Tk):
             u = self.usage.get(key) or {}
             stale = self._is_stale(key)
 
-            d.text(((ox + 40) * S, 4 * S), name, font=self.f_title, fill=accent)
+            tx = ox + (40 if self.char != "none" else 4)
+            d.text((tx * S, 4 * S), name, font=self.f_title, fill=accent)
             sub = "오래된 값 (1시간 이상 조회 실패)" if stale and u else (u.get("login_method") or "")
-            d.text(((ox + 40) * S, 29 * S), sub, font=self.f_tiny, fill=C_WARN if stale and u else INK_SOFT)
+            d.text((tx * S, 29 * S), sub, font=self.f_tiny, fill=C_WARN if stale and u else INK_SOFT)
 
             # 추가 창 (Claude: Fable 전용 주간) - 작은 막대
             fb = extra_window(u, "fable")
             if fb.get("used_percent") is not None:
                 fp = fb["used_percent"]
                 bx0, bx1, by = ox + 146, ox + half - 30, 49
-                d.text(((ox + 40) * S, (by - 5) * S), f"Fable 주간 {int(fp)}%", font=self.f_tiny, fill=INK_SOFT)
+                d.text((tx * S, (by - 5) * S), f"Fable 주간 {int(fp)}%", font=self.f_tiny, fill=INK_SOFT)
                 d.rounded_rectangle((bx0 * S, by * S, bx1 * S, (by + 4) * S), radius=2 * S, fill=TRACK)
                 fx = bx0 + (bx1 - bx0) * min(fp, 100) / 100
                 if fx > bx0 + 2:
@@ -1169,6 +1194,86 @@ class Widget(tk.Tk):
         d.ellipse(inner, fill=CARD)
         f = self.f_num_s if len(txt) >= 4 else self.f_num
         d.text((cx, cy), txt, font=f, fill=INK_SOFT if stale else INK, anchor="mm")
+
+    def _char(self, img, x, y, fi, prov, body, mark, sleeping, kind="body", scale=1.0):
+        """캐릭터 스타일에 따라 img(PIL RGB)에 캐릭터를 그린다. kind: body(전신) / head(얼굴)."""
+        style = self.char
+        if style == "none":
+            return
+        if style == "pixel":
+            d = ImageDraw.Draw(img)
+            if kind == "head":
+                self._cat_head(d, x, y, fi, body, mark, sleeping, px=max(1, int(round(CAT_PX_MINI * scale))))
+            else:
+                self._cat(d, x, y + 2, fi, body, mark, sleeping, px=max(1, int(round(CAT_PX * scale))))
+            return
+        sb, sm, blush = SMOOTH_COLORS.get(prov, (body, mark, "#ffb7c5"))
+        sprite = self._smooth_cat(fi, sb, sm, blush, sleeping, kind, scale)
+        img.paste(sprite, (x, y), sprite)
+        if sleeping:
+            d = ImageDraw.Draw(img)
+            phase = (self._ticks // 6) % 3
+            zx = x + sprite.width - 10 if kind == "body" else x + sprite.width // 2
+            d.text((zx, y - 8 + phase * 2), "z", font=self.f_z, fill=INK_SOFT)
+
+    def _smooth_cat(self, fi, body, mark, blush, sleeping, kind, scale):
+        """둥근 도형으로 그린 고양이. 4배 슈퍼샘플링 후 축소해 매끈하게. RGBA 반환."""
+        U = 4
+        if kind == "head":
+            w, h = int(22 * scale), int(24 * scale)
+        else:
+            w, h = int(44 * scale), int(34 * scale)
+        img = Image.new("RGBA", (w * U, h * U), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        k = scale * U               # 논리 px -> 렌더 px
+        dark = "#3a3230"
+        bounce = 0 if sleeping else [0, -1, -2, -1][fi]
+        wag = 0 if sleeping else [0, 1, 0, -1][fi]
+
+        def E(x0, y0, x1, y1, fill, outline=None, width=0):
+            d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill, outline=outline, width=int(width * k))
+
+        if kind == "body":
+            # 몸통 (뒤), 꼬리(왼쪽으로 말림), 머리
+            by = 18 + bounce
+            E(11, by, 35, by + 15, body)                                           # 몸
+            d.arc(((2 - wag) * k, (by - 6) * k, (16 - wag) * k, (by + 10) * k), 180, 330, fill=mark, width=int(2.4 * k))  # 꼬리
+            if not sleeping:                                                       # 발
+                for px_ in (15, 21, 27):
+                    E(px_, by + 12, px_ + 5, by + 16, body)
+            hx, hy = 22, 14 + bounce                                              # 머리 중심
+            r = 10
+        else:
+            hx, hy, r = 11, 14 + (0 if sleeping else bounce // 2), 10
+
+        # 귀 (삼각형 + 안쪽)
+        for sgn in (-1, 1):
+            ex = hx + sgn * 6
+            d.polygon([((ex - 4) * k, (hy - 5) * k), ((ex + sgn * 1.5) * k, (hy - 13) * k), ((ex + 4) * k, (hy - 5) * k)], fill=body)
+            d.polygon([((ex - 2) * k, (hy - 6) * k), ((ex + sgn * 1) * k, (hy - 10.5) * k), ((ex + 2) * k, (hy - 6) * k)], fill=blush)
+        # 머리
+        E(hx - r, hy - r, hx + r, hy + r, body)
+        # 이마 무늬
+        for dx in (-3, 0, 3):
+            d.line(((hx + dx) * k, (hy - r + 1) * k, (hx + dx) * k, (hy - r + 4.5) * k), fill=mark, width=int(1.6 * k))
+        # 볼터치
+        E(hx - 7, hy + 1.5, hx - 4, hy + 4, blush)
+        E(hx + 4, hy + 1.5, hx + 7, hy + 4, blush)
+        # 눈
+        for ex in (hx - 3.5, hx + 3.5):
+            if sleeping:
+                d.arc(((ex - 1.8) * k, (hy - 2) * k, (ex + 1.8) * k, (hy + 1) * k), 20, 160, fill=dark, width=int(1.2 * k))
+            else:
+                E(ex - 1.3, hy - 1.6, ex + 1.3, hy + 1.0, dark)
+        # 코 + 입 (ω)
+        d.polygon([((hx - 1) * k, (hy + 2) * k), ((hx + 1) * k, (hy + 2) * k), (hx * k, (hy + 3.2) * k)], fill=dark)
+        d.arc(((hx - 3) * k, (hy + 2) * k, hx * k, (hy + 5) * k), 0, 180, fill=dark, width=int(0.9 * k))
+        d.arc((hx * k, (hy + 2) * k, (hx + 3) * k, (hy + 5) * k), 0, 180, fill=dark, width=int(0.9 * k))
+        # 수염
+        for sgn in (-1, 1):
+            for dy in (-0.5, 1.5):
+                d.line(((hx + sgn * 8) * k, (hy + 2 + dy) * k, (hx + sgn * 12) * k, (hy + 1.5 + dy * 1.6) * k), fill=mark, width=int(0.8 * k))
+        return img.resize((w, h), Image.LANCZOS)
 
     def _cat_head(self, d, x, y, fi, body, mark, sleeping, px=CAT_PX_MINI):
         """미니 모드용 얼굴 아이콘."""
