@@ -61,7 +61,7 @@ set /p ANS="  [5/5] Start automatically with Windows? (Y/N): "
 if /i "!ANS!"=="Y" (
     set "SU=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ai-usage-widget.bat"
     > "!SU!" echo @echo off
-    >> "!SU!" echo call "%~dp0toggle_widget.bat" /start
+    >> "!SU!" echo call "%~dp0toggle_widget.bat" /boot
     echo        Autostart enabled.
 )
 

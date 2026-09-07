@@ -49,7 +49,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -65,6 +65,7 @@ def acquire_single_instance():
 # ---------------------------------------------------------------- 설정
 CODEXBAR_CLI = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "CodexBar" / "codexbar-cli.exe"
 # 적응형 폴링: 사용률이 오르는 중이면 빠르게, 멈춰 있으면 느리게, 조회 실패면 물러남
+BOOT_DELAY_SEC = 120                  # 부팅 자동 실행(--boot) 시 첫 조회까지 대기
 REFRESH_FAST = 60                     # 직전 조회보다 5시간 사용률이 올랐을 때
 REFRESH_SEC = 180                     # 변화 없을 때 기본 주기 (60초 고정이면 Anthropic 조회 API가 일시 차단함)
 REFRESH_IDLE = 300                    # IDLE_AFTER번 연속 변화 없으면
@@ -197,7 +198,9 @@ def fetch_usage(keys=("claude", "codex")):
     flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
     prov_arg = "both" if len(keys) > 1 else keys[0]
     out = subprocess.run(
-        [str(CODEXBAR_CLI), "usage", "-p", prov_arg, "--json", "--no-color"],
+        # --source oauth: 토큰 파일만 읽음. auto면 브라우저 쿠키 DB를 뒤지고 실패 시 claude CLI를 직접 실행하는데,
+        # 그게 Claude 데스크톱 시작/업데이트와 "파일 사용 중" 충돌을 일으킬 수 있어 막는다.
+        [str(CODEXBAR_CLI), "usage", "-p", prov_arg, "--source", "oauth", "--json", "--no-color"],
         capture_output=True, text=True, timeout=CLI_TIMEOUT, creationflags=flags,
         encoding="utf-8", errors="replace",
     )
@@ -575,7 +578,9 @@ class Widget(tk.Tk):
         self._ticks = 0
         self._fetching = False
         self._interval = REFRESH_SEC
-        self._next_fetch = 0.0
+        # --boot 로 시작(부팅 자동 실행)하면 다른 앱들이 자리 잡을 때까지 BOOT_DELAY_SEC 기다린 뒤 첫 조회
+        self._boot_wait = BOOT_DELAY_SEC if "--boot" in sys.argv else 0
+        self._next_fetch = time.monotonic() + self._boot_wait
         self._unchanged = 0
         self._last_pcts = None
         self.refresh()
@@ -683,7 +688,7 @@ class Widget(tk.Tk):
             exe = launcher if launcher.exists() else (pyw if pyw.exists() else Path(sys.executable))
             STARTUP_DIR.mkdir(parents=True, exist_ok=True)
             STARTUP_BAT.write_text(
-                f'@echo off\r\nstart "" "{exe}" "{Path(__file__).resolve()}"\r\n', encoding="utf-8")
+                f'@echo off\r\nstart "" "{exe}" "{Path(__file__).resolve()}" --boot\r\n', encoding="utf-8")
         else:
             try:
                 STARTUP_BAT.unlink()
@@ -986,6 +991,9 @@ class Widget(tk.Tk):
                 return f"{age_min}분 전 값{ct}", C_WARN, False
             fast = " · 1분 갱신" if self._interval == REFRESH_FAST else ""   # 폰트에 없는 기호(⚡) 대신 글자
             return f"갱신 {self.last_ok.strftime('%H:%M')}{fast}{ct}", INK_SOFT, False
+        if self._boot_wait and time.monotonic() < self._next_fetch and not self.last_ok:
+            left = int(self._next_fetch - time.monotonic())
+            return f"부팅 후 대기 중 · {left}초 뒤 조회", INK_SOFT, False
         return "불러오는 중…", INK_SOFT, False
 
     def _base_key_now(self):

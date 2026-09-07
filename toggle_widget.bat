@@ -15,10 +15,11 @@ if not defined PYW (
     exit /b 1
 )
 
+if /i "%~1"=="/boot" set "PYARGS2=--boot" & goto :start
 if /i "%~1"=="/start" goto :start
 
 powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'usage_widget' }; if ($p) { $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; exit 1 } else { exit 0 }"
 if %errorlevel%==1 exit /b
 
 :start
-start "" "%PYW%" %PYARGS% "%SCRIPT%"
+start "" "%PYW%" %PYARGS% "%SCRIPT%" %PYARGS2%
