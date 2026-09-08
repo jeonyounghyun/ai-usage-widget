@@ -18,13 +18,12 @@ CLAUDE_CRED = HOME / ".claude" / ".credentials.json"
 CODEX_AUTH = HOME / ".codex" / "auth.json"
 
 FIXES = {
-    "cred_off": "Win-CodexBar 트레이 아이콘 우클릭 -> Settings -> 제공업체(Providers) -> Claude -> "
-                "'Allow reading Claude Code's credentials' 체크",
-    "expired": "로그인이 만료됨. install.bat을 다시 실행하면 로그인 화면이 뜸 (또는 터미널에서  claude  실행)",
-    "rate": "조회가 너무 잦아 잠시 차단됨. 5~10분 뒤 자동 회복. Win-CodexBar 트레이 앱이 켜져 있으면 종료",
-    "claude_login": "Claude 로그인이 없음. install.bat을 다시 실행하면 설치와 로그인 화면이 뜸 (Claude account with subscription 선택)",
-    "codex_login": "Codex CLI 로그인:  codex login   (Codex를 안 쓰면 위젯 우클릭 -> 'GPT(Codex) 표시' 해제)",
-    "cli": "Win-CodexBar 설치:  winget install Finesssee.Win-CodexBar   (또는 https://github.com/nesszer/Win-CodexBar/releases)",
+    "cred_off": "사용량 읽기 허용이 꺼져 있음 -> 이 폴더의 install.bat 을 더블클릭 (설정을 자동으로 고침, 이미 된 단계는 건너뜀)",
+    "expired": "Claude 로그인이 만료됨 -> 이 폴더의 relogin.bat 을 더블클릭 (또는 위젯 우클릭 -> 문제 해결 -> Claude 다시 로그인)",
+    "rate": "조회가 너무 잦아 잠시 막힘 -> 5~10분 뒤 저절로 풀림. 작업표시줄 시계 옆에 CodexBar 아이콘이 있으면 우클릭 -> Quit",
+    "claude_login": "Claude 로그인이 없음 -> 이 폴더의 relogin.bat 을 더블클릭 (Claude account with subscription 선택)",
+    "codex_login": "GPT 로그인이 없음 -> 이 폴더의 connect_gpt.bat 을 더블클릭. GPT를 안 보면 위젯 우클릭 -> 'GPT 표시' 해제",
+    "cli": "사용량 읽는 도구(Win-CodexBar)가 없음 -> 이 폴더의 install.bat 을 더블클릭",
 }
 
 
@@ -42,12 +41,12 @@ def check_python():
         import PIL  # noqa: F401
         print(OK + f"Pillow {PIL.__version__}")
     except ImportError:
-        print(BAD + "Pillow 없음  ->  pip install pillow")
+        print(BAD + "그림 부품(Pillow) 없음 -> 이 폴더의 install.bat 을 더블클릭")
     try:
         import tkinter  # noqa: F401
         print(OK + "tkinter")
     except ImportError:
-        print(BAD + "tkinter 없음  ->  Python을 python.org 설치본으로 다시 설치 (tcl/tk 포함)")
+        print(BAD + "화면 부품(tkinter) 없음 -> Python을 python.org 에서 다시 설치 (기본 설정 그대로)")
 
 
 def check_cli():
@@ -82,8 +81,8 @@ def check_files():
         print(WARN + f"Codex 토큰 파일 없음 ({CODEX_AUTH}) - Codex를 안 쓰면 무시")
         print("     " + FIXES["codex_login"])
     which = shutil.which("claude")
-    print((OK if which else WARN) + ("claude 명령 위치: " + which if which else
-          "claude 명령을 PATH에서 못 찾음 (Claude Code 미설치이거나 PATH 미등록). 위젯 동작에는 필수 아님"))
+    print((OK if which else WARN) + ("Claude 로그인 도구 위치: " + which if which else
+          "Claude 로그인 도구(Claude Code)를 못 찾음. 위젯 동작에는 필수 아님 (로그인 파일만 있으면 됨)"))
     return ok_claude, ok_codex
 
 
@@ -99,7 +98,7 @@ def diagnose(msg):
         return FIXES["codex_login"]
     if "no cookies" in m or "app-bound" in m:
         return "브라우저 쿠키 관련 안내는 무시해도 됨 (위젯은 쿠키를 쓰지 않음)"
-    return "알 수 없는 오류. widget.log 와 함께 문의"
+    return "알 수 없는 오류 -> 이 화면을 캡처해서 설치해 준 사람에게 보여주세요"
 
 
 def check_usage():
@@ -144,8 +143,8 @@ def main():
     else:
         check_files()
     section("끝")
-    print("[X] 항목을 위 '해결' 안내대로 처리한 뒤 위젯을 다시 켜세요 (바탕화면 바로가기).")
-    print("그래도 안 되면 위젯 폴더의 widget.log 를 함께 보내주세요.")
+    print("[X] 항목을 위 '해결' 안내대로 처리한 뒤 바탕화면 'AI 사용량 위젯'을 더블클릭하세요.")
+    print("그래도 안 되면 이 화면을 캡처해서 설치해 준 사람에게 보여주세요.")
 
 
 if __name__ == "__main__":

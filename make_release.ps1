@@ -8,8 +8,8 @@ $name = "ai-usage-widget-v$ver"
 New-Item -ItemType Directory dist -Force | Out-Null
 $zip = Join-Path (Resolve-Path dist) "$name.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
-$files = @("install.bat", "install.ps1", "configure_codexbar.ps1", "toggle_widget.bat", "usage_widget.py", "toast.ps1",
-           "doctor.py", "doctor.bat", "README.md", "LICENSE") + (Get-ChildItem docs -Filter *.png | ForEach-Object { "docs/" + $_.Name })
+$files = @("처음_읽어주세요.txt", "install.bat", "install.ps1", "configure_codexbar.ps1", "toggle_widget.bat", "usage_widget.py", "toast.ps1",
+           "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE") + (Get-ChildItem docs -Filter *.png | ForEach-Object { "docs/" + $_.Name })
 # py 런처만 있고 Python이 없는 경우가 있어 실제 실행되는 것을 고른다
 $py = $null; $pyArgs = @()
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"   # 런처의 stderr 출력이 스크립트를 멈추지 않게
@@ -21,7 +21,10 @@ foreach ($c in @(@("py", @("-3")), @("python", @()))) {
 }
 $ErrorActionPreference = $prev
 if (-not $py) { throw "Python not found" }
-$list = ($files -join ";")
-& $py @pyArgs -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); [z.write(f, f) for f in sys.argv[2].split(';')]; z.close()" $zip $list
+# 파일 목록은 한글 파일명이 명령줄에서 깨지지 않도록 UTF-8 파일로 넘긴다
+$listFile = Join-Path $env:TEMP "aiw_release_files.txt"
+[System.IO.File]::WriteAllLines($listFile, $files, (New-Object System.Text.UTF8Encoding($false)))
+& $py @pyArgs -c "import zipfile,sys; names=[l.strip() for l in open(sys.argv[2],encoding='utf-8') if l.strip()]; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); [z.write(f, f) for f in names]; z.close()" $zip $listFile
+Remove-Item $listFile -ErrorAction SilentlyContinue
 if (-not (Test-Path $zip)) { throw "zip not created" }
 "created: $zip"

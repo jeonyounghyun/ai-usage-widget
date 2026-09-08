@@ -18,18 +18,38 @@
 
 ## 설치
 
-1. 오른쪽 **Releases**에서 최신 ZIP을 받아 압축을 풉니다.
-2. 폴더 안의 **`install.bat`** 을 더블클릭합니다.
-   - 파란색 "Windows의 PC 보호" 경고가 뜨면 **추가 정보 → 실행**
-   - 설치 중 "이 앱이 디바이스를 변경하도록 허용하시겠어요?" 창이 뜨면 **예**
-3. 화면 안내대로 따라갑니다. 사람이 하는 건 다음뿐입니다.
-   - **Claude 로그인** (브라우저 1회): 검은 화면에서 "Claude account with subscription" 선택 → 브라우저 로그인 → 검은 화면에 `/exit` 입력
+ZIP을 받았다면 안에 있는 **`처음_읽어주세요.txt`** 에 같은 내용이 있습니다.
+
+1. ZIP을 아무 폴더에나 풉니다 (다운로드 폴더여도 됩니다. 설치 중에 안전한 곳으로 옮겨 줍니다).
+2. 풀린 폴더의 **`install.bat`** 을 더블클릭합니다.
+   - 파란색 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**
+   - "이 앱이 디바이스를 변경하도록 허용하시겠어요?" 창이 뜨면 **예**
+3. 검은 창의 한글 안내를 따라갑니다. 직접 할 일은 세 가지뿐입니다.
+   - **Claude 로그인**: 검은 화면에서 "Claude account with subscription" 선택 → 브라우저 로그인 → 검은 화면에 `>` 입력창이 보이면 완료 → `/exit` 입력 후 Enter
    - **"Codex나 ChatGPT Work를 쓰시나요?"** → 쓰면 Y(브라우저 로그인 1회 더), 채팅만 쓰면 N
    - **"Windows 켤 때 자동 실행?"** → Y/N
+4. 화면 왼쪽 위에 카드가 뜨면 끝입니다.
 
-끝나면 화면 왼쪽 위에 카드가 뜹니다. ZIP을 다운로드 폴더에서 풀었다면 설치 스크립트가 파일을 `%LOCALAPPDATA%\Programs\ai-usage-widget`로 옮겨 두니, 다운로드 폴더를 지워도 괜찮습니다.
+이미 된 단계는 건너뛰므로, 중간에 닫혔거나 회사 PC에서 설치가 막혔다면(허용 창이 안 뜨거나 10분 넘게 멈춤) 창을 닫고 나중에 `install.bat`을 다시 실행하면 됩니다. 회사 PC에서 계속 막히면 IT 담당자에게 "Python, Win-CodexBar 설치"를 요청하세요.
 
-설치 스크립트가 자동으로 하는 일: Python·Pillow 설치, Win-CodexBar 설치와 설정(Claude 읽기 허용, 트레이 앱 자동 실행 끄기), Claude Code 설치, (Y일 때) Node.js·Codex CLI 설치, 바탕화면 바로가기.
+설치 스크립트가 함께 설치하는 것과 이유:
+
+| 프로그램 | 이유 |
+|---|---|
+| Python + Pillow | 위젯을 움직이는 엔진과 그림 부품 |
+| Win-CodexBar | 사용량을 읽어 오는 도구 (트레이 앱은 켜 둘 필요 없음) |
+| Claude Code | Claude 로그인 도구. 직접 쓸 일은 없고, claude.ai 채팅과 같은 한도를 씀 |
+| Node.js + Codex CLI (Y일 때만) | GPT 로그인 도구 |
+
+파일은 `%LOCALAPPDATA%\Programs\ai-usage-widget`(예: `C:\Users\이름\AppData\Local\Programs\ai-usage-widget`)에 놓입니다. 위젯 우클릭 → 문제 해결 → **설치 폴더 열기**로 언제든 갈 수 있습니다.
+
+### 나중에 GPT 연결하기
+
+설치 때 N을 눌렀다가 GPT도 보고 싶어지면: 위젯 우클릭 → 문제 해결 → **GPT 연결하기** (또는 설치 폴더의 `connect_gpt.bat`). 필요한 도구를 설치하고 브라우저 로그인 한 번 뒤 GPT 칸이 켜집니다. 우클릭 메뉴의 **GPT 표시**는 이미 연결된 GPT를 보이거나 숨기는 스위치일 뿐이라, 연결이 안 된 상태에서 켜면 "–"만 나옵니다.
+
+### 제거
+
+설치 폴더의 **`uninstall.bat`** (또는 위젯 우클릭 → 문제 해결 → 위젯 제거). 위젯 실행 중지, 바탕화면 바로가기, 자동 실행, 위젯 폴더를 지웁니다. 함께 설치된 Python·Win-CodexBar·Claude Code·Node.js는 다른 용도로도 쓰일 수 있어 남겨 두며, 지우려면 Windows 설정 → 앱에서 각각 제거합니다. 자동 실행만 끄려면 위젯 우클릭 → "Windows 시작 시 자동 실행" 해제.
 
 ## 화면 읽는 법
 
@@ -45,8 +65,8 @@
 | 여유 / 빠듯 / 부족 예상 | (옵션) 지금 속도면 리셋 전에 한도가 남을지 |
 | 우상단 "갱신 HH:MM" | 마지막 조회 시각. "· 1분 갱신"은 사용량이 오르는 중이라 자주 조회한다는 뜻 |
 | "N분 전 값" (주황) | 10분 넘게 조회에 실패해 옛 값을 보여주는 중. 1시간 넘으면 회색 |
-| "조회 실패 · doctor.bat 실행" | 한 번도 값을 못 받음 → `doctor.bat` |
-| "재로그인 필요 · install.bat 다시 실행" | 로그인이 만료됨 → `install.bat` 다시 실행하면 로그인 화면만 다시 뜸 |
+| "조회 실패 · 우클릭 → 문제 해결 → 점검" | 한 번도 값을 못 받음 → 우클릭 → 문제 해결 → 점검 실행 |
+| "재로그인 필요 · 우클릭 → 문제 해결" | 로그인이 만료됨 → 우클릭 → 문제 해결 → Claude 다시 로그인 |
 | 고양이 | 5시간 사용률이 높을수록 빨리 달리고, 100%면 잠듦 |
 | 미니 모드 "5h 23% · 7d 41%" | 5시간 · 7일 사용률 |
 
@@ -56,9 +76,10 @@
 |---|---|
 | 이동 | 드래그 (위치 자동 저장) |
 | 작업표시줄 미니 모드 | 더블클릭 (다시 더블클릭하면 카드로). 미니 상태에서 좌우 드래그로 자리 조정 |
-| 새로고침 / 종료 | 우상단 ↻ / ✕ (✕는 완전 종료. 다시 켜려면 바탕화면 바로가기) |
-| 켜기 / 끄기 | 바탕화면 "AI 사용량 위젯" 더블클릭 (토글) |
-| 설정 | 우클릭 메뉴 |
+| 켜기 / 다시 보이기 | 바탕화면 "AI 사용량 위젯" 더블클릭. 이미 켜져 있으면 끄지 않고 앞으로 불러옴 |
+| 끄기 | 우클릭 → **종료 (위젯 끄기)**, 또는 우상단 ✕ |
+| 새로고침 | 우상단 ↻ |
+| 설정 / 문제 해결 | 우클릭 메뉴 |
 
 우클릭 메뉴:
 
@@ -70,36 +91,32 @@
 - **알림 (80% · 100% · 리셋)**: 화면 팝업(고양이 카드) / 소리(100% 소진·리셋 때만) / Windows 알림 센터. 80% 경고와 리셋 알림은 5시간 창만, 100% 소진은 5시간·7일 모두
 - **클릭 통과 모드**: 다른 창이 활성일 땐 마우스가 위젯을 통과. 바탕화면을 클릭하거나 Ctrl을 누른 채로만 조작 가능. 켤 때 확인창이 뜸
 - **항상 위에 표시**, **전체화면 앱 실행 시 숨김**(같은 모니터에서 영상·게임·발표 중 자동 숨김), **Windows 시작 시 자동 실행**
+- **문제 해결**: 점검 실행 / Claude 다시 로그인 / GPT 연결하기 / 설치 폴더 열기 / 로그 열기 / 위젯 제거
 - **새 버전 자동 확인** (하루 1회) / **지금 업데이트 확인**: 새 버전이면 팝업 → 클릭 → 확인 창 → 자동 교체·재시작
 
 ## 문제 해결
 
-숫자가 안 뜨면 먼저 **`doctor.bat`** 을 더블클릭하세요. Python·Win-CodexBar·로그인 파일을 점검하고 실제 조회까지 해 본 뒤, 막힌 곳과 해결 방법을 알려줍니다 (오류 원문은 영어, 해결책은 한글).
+위젯이 켜져 있으면 **우클릭 → 문제 해결 → 점검 실행**, 아예 안 켜지면 설치 폴더의 **`doctor.bat`** 더블클릭. 어디가 막혔는지와 다음에 무엇을 더블클릭할지 알려줍니다. 오류 원문은 영어로 나오지만 해결책은 한글이며, 아래 표는 그 요약입니다.
 
-| 어디서 | 메시지 | 뜻 / 해결 |
-|---|---|---|
-| doctor, CodexBar | `Reading Claude Code's credentials is off` | CodexBar의 Claude 읽기 허용이 꺼짐. `install.bat` 다시 실행(자동 설정) 또는 아래 "CodexBar 수동 설정" |
-| doctor, CodexBar | `OAuth access token has expired` / `Re-authenticate` | Claude 로그인 만료. `install.bat` 다시 실행하면 로그인 화면만 다시 뜸 |
-| doctor, CodexBar | `usage endpoint is rate limited` | 조회가 너무 잦아 잠시 차단. 5~10분 뒤 자동 회복. CodexBar 트레이 앱이 켜져 있으면 종료 |
-| doctor, CodexBar | `Claude usage failed from all configured sources. Web: …; OAuth: …; CLI: …` | 가운데 OAuth 부분 문구로 위 두 줄 중 해당 항목 적용. Web/CLI 부분은 무시 |
-| CodexBar | `App-Bound Encryption … cookies failed to decrypt` | 브라우저 쿠키 안내. 위젯은 쿠키를 쓰지 않으므로 무시 |
-| CodexBar | `Not logged in to Gemini` | Gemini는 지원 안 함. CodexBar 제공업체에서 Gemini 체크 해제 |
-| doctor, CodexBar | Codex `Not logged in` / `Authentication required` / `Codex account not found` | Codex 로그인 없음. 터미널에서 `codex login`. 안 쓰면 위젯 우클릭 → GPT 표시 해제 |
-| 터미널 | `'claude'은(는) 내부 또는 외부 명령… 아닙니다` | Claude Code는 깔렸는데 경로 미등록. `install.bat` 다시 실행하면 등록됨 |
-| 로그인 화면 | 로그인 방식 선택 | **"Claude account with subscription"** 선택. API 키 방식은 한도가 없어 숫자가 안 뜸 |
-| 위젯 | Claude 자리 `–` | 위 Claude 항목 중 하나. `doctor.bat`으로 확인 |
-| 위젯 | GPT 자리 `–` | Codex를 안 쓰면 정상. 우클릭 → GPT 표시 해제 |
-| 설치 | Python 설치 실패 | winget이 없는 PC. python.org에서 설치(Add to PATH 체크) 후 `install.bat` 재실행 |
-| 아무 반응 없음 | | 폴더의 `widget.log` 확인. 위젯이 사라졌다면 전체화면 앱 때문에 숨은 것일 수 있음 (앱을 닫으면 복귀) |
+| 상황 | 해결 |
+|---|---|
+| 위젯에 "재로그인 필요" | 우클릭 → 문제 해결 → **Claude 다시 로그인** (검은 화면에서 브라우저 로그인 → `>` 입력창이 보이면 `/exit`) |
+| 위젯에 "조회 실패" / Claude 자리 `–` | 우클릭 → 문제 해결 → **점검 실행**. 대부분 "사용량 읽기 허용 꺼짐"이거나 로그인 만료이며, 점검 결과에 더블클릭할 파일이 적혀 있음 |
+| 점검 결과에 `rate limited` | 조회가 너무 잦아 잠시 막힘. 5~10분 뒤 저절로 풀림. 작업표시줄 시계 옆에 CodexBar 아이콘이 있으면 우클릭 → Quit |
+| GPT 자리 `–` | GPT를 안 쓰면 정상 → 우클릭 → GPT 표시 해제. 보고 싶으면 문제 해결 → **GPT 연결하기** |
+| Claude 로그인 화면에서 무엇을 고를지 | **"Claude account with subscription"**. 다른 방식은 한도가 없어 숫자가 안 뜸 |
+| 위젯이 사라짐 | 바탕화면 "AI 사용량 위젯" 더블클릭 (앞으로 불러옴). 영상·게임 전체화면 중에는 자동으로 숨었다가 돌아옴 |
+| 다운로드 폴더를 지웠는데 파일이 필요함 | 위젯 우클릭 → 문제 해결 → **설치 폴더 열기**. 위젯도 안 켜지면 `C:\Users\이름\AppData\Local\Programs\ai-usage-widget` |
+| 설치가 막힘 (허용 창이 안 뜸, 10분 넘게 멈춤) | 창을 닫고 나중에 `install.bat` 다시 실행. 회사 PC면 IT 담당자에게 Python·Win-CodexBar 설치 요청 |
+| 그래도 안 됨 | 점검 화면을 캡처해서 설치해 준 사람에게 보여주기 |
 
-### CodexBar 수동 설정 (자동 설정이 실패했을 때만)
+### CodexBar 수동 설정 (설치해 주는 사람용)
 
-위젯은 [Win-CodexBar](https://github.com/nesszer/Win-CodexBar)의 명령줄 도구로 사용량을 읽습니다. `install.bat`이 설정을 자동으로 써 넣지만, 실패했거나 CodexBar 업데이트로 초기화됐다면:
+위젯은 [Win-CodexBar](https://github.com/nesszer/Win-CodexBar)의 명령줄 도구로 사용량을 읽습니다. `install.bat`이 설정을 자동으로 써 넣으며, CodexBar 업데이트로 초기화됐을 때도 `install.bat`을 다시 실행하면 고쳐집니다. 손으로 해야 한다면:
 
 1. 시작 메뉴에서 CodexBar 실행 → 작업표시줄 시계 옆 트레이 아이콘 우클릭 → **Settings**
 2. 상단 **제공업체(Providers)** → **Claude** → **"Allow reading Claude Code's credentials"** 체크
-3. 쓰지 않는 제공자(Gemini, Copilot 등)는 체크 해제 (선택)
-4. 트레이 아이콘 우클릭 → **Quit**. 트레이 앱과 위젯이 동시에 조회하면 차단될 수 있어 위젯만 쓰는 편이 안정적입니다
+3. 트레이 아이콘 우클릭 → **Quit**. 트레이 앱과 위젯이 동시에 조회하면 차단될 수 있어 위젯만 쓰는 편이 안정적입니다
 
 ## 동작 원리
 

@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -84,7 +84,10 @@ UPDATE_REPO = "jeonyounghyun/ai-usage-widget"
 UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 UPDATE_CHECK_SEC = 24 * 3600          # 자동 업데이트 확인 주기
 UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "install.ps1", "configure_codexbar.ps1",
-                "doctor.py", "doctor.bat", "README.md", "LICENSE")
+                "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE",
+                "처음_읽어주세요.txt")
+HERE = Path(__file__).resolve().parent
+SHOW_FLAG = HERE / "show.flag"          # 바로가기가 "이미 켜져 있음"을 알리는 신호 파일 → 위젯을 앞으로
 STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 STARTUP_BAT = STARTUP_DIR / "ai-usage-widget.bat"
 FONT_DIR = Path("C:/Windows/Fonts")
@@ -173,6 +176,7 @@ CAT_PX_MINI = 2
 # 마우스를 올리면 나오는 설명
 TIPS = {
     "title": "{name} 사용량. 색: 초록 50% 미만 · 노랑 50~80% · 빨강 80% 이상",
+    "title_codex": "GPT 사용량 = Codex·ChatGPT Work 에이전트 한도 (ChatGPT 일반 채팅 한도는 아님). 색: 초록 <50% · 노랑 50~80% · 빨강 80%+",
     "primary": "5시간 창: 최근 5시간 동안 쓴 비율. 100%가 되면 표시된 시각에 0%로 리셋",
     "secondary": "7일 창: 최근 7일 동안 쓴 비율. 5시간 창과 별도로 계산",
     "fable": "Fable 모델 전용 주간 한도. 7일 전체 한도보다 먼저 차는 경우가 많음",
@@ -675,12 +679,22 @@ class Widget(tk.Tk):
         self.menu.add_checkbutton(label="Windows 시작 시 자동 실행", variable=self.autostart_var,
                                   command=self._toggle_autostart)
         self.menu.add_separator()
+        fix_menu = tk.Menu(self.menu, **kw)
+        fix_menu.add_command(label="점검 실행 (어디가 막혔는지 확인)", command=lambda: self._run_tool("doctor.bat"))
+        fix_menu.add_command(label="Claude 다시 로그인", command=lambda: self._run_tool("relogin.bat"))
+        fix_menu.add_command(label="GPT 연결하기 (설치·로그인)", command=lambda: self._run_tool("connect_gpt.bat"))
+        fix_menu.add_separator()
+        fix_menu.add_command(label="설치 폴더 열기", command=lambda: os.startfile(str(HERE)))
+        fix_menu.add_command(label="로그 열기", command=lambda: os.startfile(str(LOG_PATH)))
+        fix_menu.add_command(label="위젯 제거", command=lambda: self._run_tool("uninstall.bat"))
+        self.menu.add_cascade(label="문제 해결", menu=fix_menu)
+        self.menu.add_separator()
         self.upd_var = tk.BooleanVar(value=self.state.get("auto_update", True))
         self.menu.add_checkbutton(label="새 버전 자동 확인 (하루 1회)", variable=self.upd_var,
                                   command=lambda: self._set("auto_update", self.upd_var.get()))
         self.menu.add_command(label=f"지금 업데이트 확인 (현재 v{VERSION})", command=lambda: self.check_update(manual=True))
         self.menu.add_separator()
-        self.menu.add_command(label="종료", command=self.destroy)
+        self.menu.add_command(label="종료 (위젯 끄기)", command=self.destroy)
 
     def _toggle_click_through(self):
         if self.ct_var.get():
@@ -694,6 +708,18 @@ class Widget(tk.Tk):
                 self.ct_var.set(False)
                 return
         self._set("click_through", self.ct_var.get())
+
+    def _run_tool(self, name):
+        """폴더의 배치 파일을 새 콘솔 창으로 실행 (사용자가 안내를 보고 진행)."""
+        path = HERE / name
+        if not path.exists():
+            messagebox.showerror("문제 해결", f"{name} 파일이 없습니다.\n설치 폴더: {HERE}", parent=self)
+            return
+        try:
+            os.startfile(str(path))
+        except Exception as ex:  # noqa: BLE001
+            log.exception("run tool failed")
+            messagebox.showerror("문제 해결", f"실행 실패: {ex}", parent=self)
 
     def _set_char(self):
         self._set("char", self.char_var.get())
@@ -1037,6 +1063,12 @@ class Widget(tk.Tk):
                 self._update_click_through()
             if self._ticks % 10 == 0:
                 self._check_fullscreen()
+                if SHOW_FLAG.exists():
+                    try:
+                        SHOW_FLAG.unlink()
+                    except OSError:
+                        pass
+                    self._show_self()
                 if (self._ticks >= 300 and self.state.get("auto_update", True)
                         and time.time() - self.state.get("last_update_check", 0) > UPDATE_CHECK_SEC):
                     self.check_update()
@@ -1063,6 +1095,22 @@ class Widget(tk.Tk):
         if changed or want != getattr(self, "_ct_now", None):
             self._ct_now = want
             self._base_key = None  # 상태 표시 갱신
+
+    def _show_self(self):
+        """바로가기를 다시 눌렀을 때: 숨겨져 있으면 보이고, 화면 밖이면 안으로, 맨 앞으로."""
+        if self._hidden:
+            self._hidden = False
+            self.deiconify()
+            self.overrideredirect(True)
+        if not self.mini:
+            x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
+            self.state["x"], self.state["y"] = x, y
+        self._apply_geometry()
+        self.attributes("-topmost", True)
+        self.lift()
+        if not self.state.get("topmost", True):
+            self.attributes("-topmost", False)
+        Popup(self, "위젯은 여기 있어요 · 끄려면 우클릭 → 종료", INK_SOFT, None, seconds=6)
 
     def _check_fullscreen(self):
         want_hide = self.state.get("hide_fullscreen", True) and foreground_is_fullscreen(self._hwnd())
@@ -1104,13 +1152,13 @@ class Widget(tk.Tk):
         for k in failed:
             err = (self.errors.get(k) or self.error or "").lower()
             if "expired" in err or "re-authenticate" in err or "credentials is off" in err or "not logged in" in err:
-                parts.append(f"{names.get(k, k)} 재로그인 필요 · install.bat 다시 실행")
+                parts.append(f"{names.get(k, k)} 재로그인 필요 · 우클릭 → 문제 해결")
                 continue
             t = ok_at.get(k)
             if t:
                 parts.append(f"{names.get(k, k)} 조회 실패 · {datetime.fromtimestamp(t).strftime('%H:%M')} 값 유지")
             else:
-                parts.append(f"{names.get(k, k)} 조회 실패 · doctor.bat 실행")
+                parts.append(f"{names.get(k, k)} 조회 실패 · 우클릭 → 문제 해결 → 점검")
         return " · ".join(parts)
 
     def _status(self):
@@ -1228,7 +1276,7 @@ class Widget(tk.Tk):
             tx = ox + (40 if self.char != "none" else 4)
             d.text((tx * S, 4 * S), name, font=self.f_title, fill=accent)
             title_end = tx + d.textlength(name, font=self.f_title) / S
-            tips.append((ox, 2, tx + 90, 40, TIPS["title"].format(name=name)))
+            tips.append((ox, 2, tx + 90, 40, TIPS["title_codex"] if key == "codex" else TIPS["title"].format(name=name)))
             sub = "오래된 값 (1시간 이상 조회 실패)" if stale and u else (u.get("login_method") or "")
             d.text((tx * S, 29 * S), sub, font=self.f_tiny, fill=C_WARN if stale and u else INK_SOFT)
 

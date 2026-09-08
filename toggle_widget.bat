@@ -1,8 +1,22 @@
 @echo off
-rem Toggle AI usage widget: stop if running, otherwise start.
-rem   toggle_widget.bat          -> toggle
-rem   toggle_widget.bat /start   -> start only (used by installer / autostart)
+rem AI usage widget launcher.
+rem   toggle_widget.bat          -> start the widget, or bring it back if already running (never stops it)
+rem   toggle_widget.bat /start   -> same as above (used by installer)
+rem   toggle_widget.bat /boot    -> start with --boot (used by Windows startup)
+rem   toggle_widget.bat /stop    -> stop the widget (used by uninstall)
 set "SCRIPT=%~dp0usage_widget.py"
+
+if /i "%~1"=="/stop" (
+    powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'usage_widget' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+    exit /b 0
+)
+
+rem --- already running? then ask it to show itself instead of starting a second copy
+powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'usage_widget' }; if ($p) { exit 1 } else { exit 0 }"
+if %errorlevel%==1 (
+    echo show > "%~dp0show.flag"
+    exit /b 0
+)
 
 rem --- find a windowless Python (pythonw): install-manager launcher > PATH > py launcher
 set "PYW="
@@ -14,12 +28,5 @@ if not defined PYW (
     pause
     exit /b 1
 )
-
-if /i "%~1"=="/boot" set "PYARGS2=--boot" & goto :start
-if /i "%~1"=="/start" goto :start
-
-powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'usage_widget' }; if ($p) { $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; exit 1 } else { exit 0 }"
-if %errorlevel%==1 exit /b
-
-:start
+if /i "%~1"=="/boot" set "PYARGS2=--boot"
 start "" "%PYW%" %PYARGS% "%SCRIPT%" %PYARGS2%
