@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -362,6 +362,10 @@ _user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
 _user32.FindWindowW.restype = _HWND
 _user32.FindWindowExW.argtypes = [_HWND, _HWND, ctypes.c_wchar_p, ctypes.c_wchar_p]
 _user32.FindWindowExW.restype = _HWND
+_user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+_user32.MonitorFromPoint.restype = ctypes.c_void_p
+_MONENUM = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_double)
+_user32.EnumDisplayMonitors.argtypes = [ctypes.c_void_p, ctypes.c_void_p, _MONENUM, ctypes.c_double]
 HWND_TOPMOST = _HWND(-1)
 
 
@@ -424,7 +428,7 @@ def set_click_through(hwnd, enable):
 
 
 def taskbar_slot(w, h):
-    """작업표시줄 알림 영역(시계) 왼쪽에 w x h 를 놓을 좌표. 작업표시줄이 가로가 아니면 None."""
+    """주 모니터 작업표시줄 알림 영역(시계) 왼쪽에 w x h 를 놓을 좌표. 작업표시줄이 가로가 아니면 None."""
     try:
         tb = _user32.FindWindowW("Shell_TrayWnd", None)
         if not tb:
@@ -445,6 +449,58 @@ def taskbar_slot(w, h):
         return x, y
     except Exception:  # noqa: BLE001
         return None
+
+
+def monitors():
+    """[(rcMonitor, rcWork)] 모든 모니터."""
+    out = []
+
+    def cb(hmon, hdc, prect, lparam):
+        mi = _MONITORINFO()
+        mi.cbSize = ctypes.sizeof(_MONITORINFO)
+        if _user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            m, k = mi.rcMonitor, mi.rcWork
+            out.append(((m.l, m.t, m.r, m.b), (k.l, k.t, k.r, k.b)))
+        return 1
+
+    _user32.EnumDisplayMonitors(None, None, _MONENUM(cb), 0)
+    return out
+
+
+def taskbars():
+    """모든 작업표시줄 창의 (l, t, r, b). 주 모니터(Shell_TrayWnd) + 보조 모니터(Shell_SecondaryTrayWnd)."""
+    out = []
+    for cls in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
+        h = None
+        while True:
+            h = _user32.FindWindowExW(None, h, cls, None)
+            if not h:
+                break
+            r = _RECT()
+            if _user32.GetWindowRect(h, ctypes.byref(r)):
+                out.append((r.l, r.t, r.r, r.b))
+    return out
+
+
+def dock_y(x, w, h, default_y):
+    """미니 위젯이 x 위치에 놓였을 때, 그 자리 모니터의 작업표시줄 세로 중앙 y.
+    다중 모니터에서 모니터마다 작업표시줄 높이·위치가 달라(세로 모니터, 배율 차이) 주 모니터 y를 그대로 쓰면 허공에 뜬다.
+    반환: (y, on_screen). on_screen=False면 그 x에 모니터가 없음(모니터가 빠진 뒤 등)."""
+    try:
+        cx = x + w // 2
+        mons = [m for m in monitors() if m[0][0] <= cx < m[0][2]]
+        if not mons:
+            return default_y, False
+        # 위아래로 겹친 모니터가 여럿이면 기본 y(주 작업표시줄)에 가장 가까운 것
+        mon, work = min(mons, key=lambda m: 0 if m[0][1] <= default_y < m[0][3] else min(abs(m[0][1] - default_y), abs(m[0][3] - default_y)))
+        for l, t, r, b in taskbars():
+            if l < mon[2] and r > mon[0] and t < mon[3] and b > mon[1]:  # 이 모니터 위의 작업표시줄
+                if (b - t) <= (r - l):  # 가로 작업표시줄 → 그 안에 세로 중앙
+                    return t + ((b - t) - h) // 2, True
+                break  # 세로 작업표시줄 → 붙일 자리 없음, 화면 아래쪽에
+        return work[3] - h - 8, True
+    except Exception:  # noqa: BLE001
+        return default_y, True
 
 
 def clamp_to_screen(x, y):
@@ -756,7 +812,12 @@ class Widget(tk.Tk):
                 l, t, r, b = work_area()
                 slot = (r - w - 12, b - h - 12)
             self._mini_slot = slot
-            x, y = slot[0] + int(self.state.get("mini_dx", 0)), slot[1]   # mini_dx: 사용자가 드래그로 정한 좌우 오프셋
+            x = slot[0] + int(self.state.get("mini_dx", 0))   # mini_dx: 사용자가 드래그로 정한 좌우 오프셋
+            y, on_screen = dock_y(x, w, h, slot[1])          # 놓인 모니터의 작업표시줄에 맞춤 (다중 모니터)
+            if not on_screen:                                # 그 자리에 모니터가 없음(빠짐/재배치) → 주 모니터로 복귀
+                self.state["mini_dx"] = 0
+                x, y = slot
+                self._save_state()
         else:
             w, h = W, H
             x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
@@ -884,9 +945,11 @@ class Widget(tk.Tk):
             self._drag = None
             if self.mini:
                 self.state["mini_dx"] = self.winfo_x() - self._mini_slot[0]
+                self._save_state()
+                self._apply_geometry()   # 다른 모니터로 옮겼으면 그 모니터의 작업표시줄 높이로 바로 맞춤
             else:
                 self.state["x"], self.state["y"] = self.winfo_x(), self.winfo_y()
-            self._save_state()
+                self._save_state()
             return
         hit = self._hit(e.x, e.y)
         if hit == "close":
