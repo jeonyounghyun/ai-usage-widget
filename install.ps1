@@ -85,6 +85,10 @@ function Configure-CodexBar([string]$providers) {
     if (-not (Test-Path $cli)) { return $false }
     $settings = Join-Path $env:APPDATA "CodexBar\settings.json"
     if (-not (Test-Path $settings)) {
+        # 새로 깐 CodexBar는 앱을 켜도 설정 파일을 만들지 않는다(값을 바꿔야 저장). CLI로 제공자를 켜면 파일이 생긴다.
+        & $cli config enable claude 2>&1 | Out-Null
+    }
+    if (-not (Test-Path $settings)) {
         Say "  설정 파일을 만들기 위해 CodexBar를 잠깐 켰다 끕니다 (창이 잠깐 보일 수 있음)..."
         Start-Process $app
         for ($i = 0; $i -lt 20 -and -not (Test-Path $settings); $i++) { Start-Sleep 1 }
@@ -106,7 +110,6 @@ function Set-WidgetState([string]$key, $value) {
 }
 
 function Do-GptConnect {
-    Say "  GPT 숫자는 Codex·ChatGPT Work(에이전트) 사용량입니다. 일반 채팅은 한도가 없어 해당 없습니다."
     if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
         if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
             Say "  GPT 로그인 도구(Codex CLI)를 설치하려면 Node.js가 먼저 필요합니다. 설치합니다 (1~2분, '허용' 창이 뜨면 예)..."
@@ -128,7 +131,7 @@ function Do-GptConnect {
     }
     if (-not (Test-Path "$env:USERPROFILE\.codex\auth.json")) { Warn "GPT 로그인이 확인되지 않았습니다. 나중에 connect_gpt.bat 을 다시 실행하세요."; return $false }
     Set-WidgetState "show_gpt" $true
-    [void](Configure-CodexBar "claude,codex")
+    if ($Gpt) { [void](Configure-CodexBar "claude,codex") }   # 처음 설치 때는 [5/7]에서 한 번에 설정
     Say "  GPT 연결 완료. 위젯을 켜면 GPT 칸이 나타납니다 (켜져 있으면 우클릭 → 지금 새로고침)."
     return $true
 }
@@ -146,6 +149,7 @@ if ($Relogin) {
 # ================================================================ 모드: GPT 연결
 if ($Gpt) {
     Head "GPT 연결"
+    Say "  GPT 숫자는 Codex·ChatGPT Work(에이전트) 사용량입니다. 일반 채팅은 한도가 없어 해당 없습니다."
     [void](Do-GptConnect)
     Pause-Enter "닫으려면 Enter"; exit 0
 }
