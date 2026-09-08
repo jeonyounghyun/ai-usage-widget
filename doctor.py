@@ -20,9 +20,9 @@ CODEX_AUTH = HOME / ".codex" / "auth.json"
 FIXES = {
     "cred_off": "Win-CodexBar 트레이 아이콘 우클릭 -> Settings -> 제공업체(Providers) -> Claude -> "
                 "'Allow reading Claude Code's credentials' 체크",
-    "expired": "터미널에서  claude  를 한 번 실행해 로그인/토큰 갱신 (구독 계정으로 로그인)",
+    "expired": "로그인이 만료됨. install.bat을 다시 실행하면 로그인 화면이 뜸 (또는 터미널에서  claude  실행)",
     "rate": "조회가 너무 잦아 잠시 차단됨. 5~10분 뒤 자동 회복. Win-CodexBar 트레이 앱이 켜져 있으면 종료",
-    "claude_login": "Claude Code 설치 후 터미널에서  claude  실행 -> 'Claude account with subscription' 선택 -> 브라우저 로그인",
+    "claude_login": "Claude 로그인이 없음. install.bat을 다시 실행하면 설치와 로그인 화면이 뜸 (Claude account with subscription 선택)",
     "codex_login": "Codex CLI 로그인:  codex login   (Codex를 안 쓰면 위젯 우클릭 -> 'GPT(Codex) 표시' 해제)",
     "cli": "Win-CodexBar 설치:  winget install Finesssee.Win-CodexBar   (또는 https://github.com/nesszer/Win-CodexBar/releases)",
 }

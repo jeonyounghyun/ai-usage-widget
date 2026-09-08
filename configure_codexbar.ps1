@@ -1,4 +1,4 @@
-# Win-CodexBar 설정을 자동으로 맞춘다 (install.bat이 호출).
+﻿# Win-CodexBar 설정을 자동으로 맞춘다 (install.bat이 호출).
 #  - Claude 토큰 읽기 허용 (claude_allow_reading_claude_code_credentials = true)
 #  - 표시할 제공자만 켬 (enabled_providers)
 #  - 트레이 앱 부팅 자동 실행/플로팅 바 끔 (위젯과 중복 조회 방지)

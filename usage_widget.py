@@ -8,7 +8,9 @@ RunCat처럼 픽셀 고양이가 달리며, 5시간 한도를 많이 쓸수록 �
 조작:
   - 드래그: 위치 이동 (자동 저장)
   - 우상단 ↻: 즉시 새로고침, ✕: 종료
-  - 우클릭: 메뉴 (새로고침 / 투명도 / 페이스 예측 / 클릭 통과 / 알림 소리 / 항상 위 / 전체화면 시 숨김 / 시작 시 자동 실행 / 종료)
+  - 우클릭: 메뉴 (새로고침 / 캐릭터 스타일 / Claude·GPT 표시 / 미니 모드 / 투명도 / 소진 예측 / 알림 / 클릭 통과 / 항상 위 /
+              전체화면 시 숨김 / 시작 시 자동 실행 / 업데이트 / 종료)
+  - 마우스를 올리면 각 요소 설명(툴팁). 첫 실행 때 조작법 안내 팝업 1회
   - 클릭 통과 모드: 다른 창이 활성일 땐 마우스가 위젯을 통과. 바탕화면이 활성이거나 Ctrl을 누른 동안만 조작 가능
 
 기능:
@@ -32,6 +34,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import tkinter.messagebox as messagebox
 import urllib.request
 import winsound
 import zipfile
@@ -49,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -80,7 +83,7 @@ CONFIG_PATH = Path(__file__).with_name("widget_state.json")
 UPDATE_REPO = "jeonyounghyun/ai-usage-widget"
 UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 UPDATE_CHECK_SEC = 24 * 3600          # 자동 업데이트 확인 주기
-UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "configure_codexbar.ps1",
+UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "install.ps1", "configure_codexbar.ps1",
                 "doctor.py", "doctor.bat", "README.md", "LICENSE")
 STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 STARTUP_BAT = STARTUP_DIR / "ai-usage-widget.bat"
@@ -105,7 +108,7 @@ WINDOWS = [("primary", "5시간"), ("secondary", "7일")]
 # 레이아웃 (논리 px). 카드는 SS배 슈퍼샘플링 후 축소, 고양이는 원본 도트.
 SS = 2
 SEC_W = 278                # 제공자 한 칸 너비 (카드)
-MINI_SEC_W = 128           # 제공자 한 칸 너비 (미니)
+MINI_SEC_W = 142           # 제공자 한 칸 너비 (미니)
 W, H = 4 + SEC_W * 2, 126
 RADIUS = 16
 MINI_W, MINI_H = MINI_SEC_W * 2, 40   # 작업표시줄 미니 모드 크기 (라벨 1줄 + 퍼센트 1줄)
@@ -166,6 +169,17 @@ CAT_HEAD = [
 CAT_HEAD_SLEEP = [r.replace("e", "-") for r in CAT_HEAD]
 CAT_HEAD_BOB = [0, -1, 0, 1]
 CAT_PX_MINI = 2
+
+# 마우스를 올리면 나오는 설명
+TIPS = {
+    "title": "{name} 사용량. 색: 초록 50% 미만 · 노랑 50~80% · 빨강 80% 이상",
+    "primary": "5시간 창: 최근 5시간 동안 쓴 비율. 100%가 되면 표시된 시각에 0%로 리셋",
+    "secondary": "7일 창: 최근 7일 동안 쓴 비율. 5시간 창과 별도로 계산",
+    "fable": "Fable 모델 전용 주간 한도. 7일 전체 한도보다 먼저 차는 경우가 많음",
+    "pace": "소진 예측: 지금 속도면 리셋 전에 한도가 남을지(여유), 모자랄지(부족 예상)",
+    "status": "마지막 조회 시각. '1분 갱신' = 사용량이 오르는 중이라 자주 조회. 'N분 전 값' = 조회가 계속 실패해 옛 값을 보여주는 중",
+    "mini": "5시간 · 7일 사용률. 더블클릭하면 큰 카드로, 좌우 드래그로 위치 이동",
+}
 
 # 캐릭터 스타일: "smooth"(부드러운 벡터 고양이, 기본) / "pixel"(도트) / "none"
 CHAR_STYLES = [("smooth", "부드러운 고양이"), ("pixel", "도트 고양이"), ("none", "없음")]
@@ -588,9 +602,17 @@ class Widget(tk.Tk):
         self.canvas.bind("<ButtonRelease-1>", self._release)
         self.canvas.bind("<Button-3>", self._popup_menu)
         self.canvas.bind("<Motion>", self._motion)
+        self.canvas.bind("<Leave>", lambda _e: self._tip_hide())
+        self.canvas.bind("<ButtonPress>", lambda _e: self._tip_hide(), add="+")
 
         self._build_menu()
         self._apply_geometry()
+        self._tips = []
+        self._tip_win = None
+        self._tip_job = None
+        self._tip_key = None
+        if not self.state.get("guided"):
+            self.after(1500, self._first_run_guide)
         self._ticks = 0
         self._fetching = False
         self._interval = REFRESH_SEC
@@ -615,7 +637,7 @@ class Widget(tk.Tk):
         self.claude_var = tk.BooleanVar(value=self.state.get("show_claude", True))
         self.menu.add_checkbutton(label="Claude 표시", variable=self.claude_var, command=self._toggle_providers)
         self.gpt_var = tk.BooleanVar(value=self.state.get("show_gpt", True))
-        self.menu.add_checkbutton(label="GPT(Codex) 표시", variable=self.gpt_var, command=self._toggle_providers)
+        self.menu.add_checkbutton(label="GPT 표시 (Codex·ChatGPT Work 한도)", variable=self.gpt_var, command=self._toggle_providers)
         self.mini_var = tk.BooleanVar(value=self.mini)
         self.menu.add_checkbutton(label="작업표시줄 미니 모드 (더블클릭으로 전환)", variable=self.mini_var,
                                   command=lambda: self.toggle_mini(self.mini_var.get()))
@@ -627,20 +649,23 @@ class Widget(tk.Tk):
         self.menu.add_cascade(label="투명도", menu=alpha_menu)
 
         self.pace_var = tk.BooleanVar(value=self.state.get("pace", False))
-        self.menu.add_checkbutton(label="페이스 예측 표시", variable=self.pace_var,
+        self.menu.add_checkbutton(label="소진 예측 표시 (리셋 전에 모자랄지)", variable=self.pace_var,
                                   command=lambda: self._set("pace", self.pace_var.get()))
-        self.ct_var = tk.BooleanVar(value=self.state.get("click_through", False))
-        self.menu.add_checkbutton(label="클릭 통과 (바탕화면·Ctrl 누를 때만 조작)", variable=self.ct_var,
-                                  command=lambda: self._set("click_through", self.ct_var.get()))
+
+        alert_menu = tk.Menu(self.menu, **kw)
         self.popup_var = tk.BooleanVar(value=self.state.get("popup", True))
-        self.menu.add_checkbutton(label="알림 팝업 (고양이 카드)", variable=self.popup_var,
-                                  command=lambda: self._set("popup", self.popup_var.get()))
-        self.toast_var = tk.BooleanVar(value=self.state.get("toast", False))
-        self.menu.add_checkbutton(label="Windows 알림 센터로도 알림", variable=self.toast_var,
-                                  command=lambda: self._set("toast", self.toast_var.get()))
+        alert_menu.add_checkbutton(label="화면 팝업 (고양이 카드)", variable=self.popup_var,
+                                   command=lambda: self._set("popup", self.popup_var.get()))
         self.sound_var = tk.BooleanVar(value=self.state.get("sound", True))
-        self.menu.add_checkbutton(label="알림 소리", variable=self.sound_var,
-                                  command=lambda: self._set("sound", self.sound_var.get()))
+        alert_menu.add_checkbutton(label="소리 (100% 소진·리셋 때만)", variable=self.sound_var,
+                                   command=lambda: self._set("sound", self.sound_var.get()))
+        self.toast_var = tk.BooleanVar(value=self.state.get("toast", False))
+        alert_menu.add_checkbutton(label="Windows 알림 센터에도 남기기", variable=self.toast_var,
+                                   command=lambda: self._set("toast", self.toast_var.get()))
+        self.menu.add_cascade(label="알림 (80% · 100% · 리셋)", menu=alert_menu)
+
+        self.ct_var = tk.BooleanVar(value=self.state.get("click_through", False))
+        self.menu.add_checkbutton(label="클릭 통과 모드", variable=self.ct_var, command=self._toggle_click_through)
         self.topmost_var = tk.BooleanVar(value=self.state.get("topmost", True))
         self.menu.add_checkbutton(label="항상 위에 표시", variable=self.topmost_var, command=self._toggle_topmost)
         self.fs_var = tk.BooleanVar(value=self.state.get("hide_fullscreen", True))
@@ -656,6 +681,19 @@ class Widget(tk.Tk):
         self.menu.add_command(label=f"지금 업데이트 확인 (현재 v{VERSION})", command=lambda: self.check_update(manual=True))
         self.menu.add_separator()
         self.menu.add_command(label="종료", command=self.destroy)
+
+    def _toggle_click_through(self):
+        if self.ct_var.get():
+            ok = messagebox.askokcancel(
+                "클릭 통과 모드",
+                "켜면 다른 창이 활성일 때 마우스가 위젯을 통과합니다 (위젯을 클릭할 수 없음).\n\n"
+                "위젯을 다시 조작하려면 바탕화면을 클릭하거나 Ctrl 키를 누른 채로 클릭하세요.\n"
+                "끄려면 그 상태에서 우클릭 → 클릭 통과 모드 해제.",
+                parent=self)
+            if not ok:
+                self.ct_var.set(False)
+                return
+        self._set("click_through", self.ct_var.get())
 
     def _set_char(self):
         self._set("char", self.char_var.get())
@@ -706,6 +744,50 @@ class Widget(tk.Tk):
         self.state[key] = value
         self._save_state()
 
+    def _first_run_guide(self):
+        self._set("guided", True)
+        Popup(self, "드래그로 이동 · 더블클릭은 작업표시줄 미니 모드 · 우클릭은 설정 · 마우스를 올리면 설명이 떠요",
+              INK_SOFT, None, seconds=25)
+
+    # ------------------------------------------------------------ 툴팁
+    def _tip_at(self, x, y):
+        for x0, y0, x1, y1, text in self._tips:
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                return text
+        return None
+
+    def _tip_hide(self):
+        if self._tip_job:
+            self.after_cancel(self._tip_job)
+            self._tip_job = None
+        if self._tip_win:
+            try:
+                self._tip_win.destroy()
+            except tk.TclError:
+                pass
+            self._tip_win = None
+        self._tip_key = None
+
+    def _tip_show(self, text, x, y):
+        self._tip_hide()
+        self._tip_key = text
+        w = tk.Toplevel(self)
+        w.overrideredirect(True)
+        w.attributes("-topmost", True)
+        lbl = tk.Label(w, text=text, bg="#fffdf9", fg=INK, font=("Malgun Gothic", 9), justify="left",
+                       wraplength=320, padx=10, pady=6, relief="solid", bd=1, highlightthickness=0)
+        lbl.configure(highlightbackground=CARD_EDGE)
+        lbl.pack()
+        w.update_idletasks()
+        sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+        px, py = x + 14, y + 18
+        if px + w.winfo_width() > sw:
+            px = sw - w.winfo_width() - 8
+        if py + w.winfo_height() > sh:
+            py = y - w.winfo_height() - 8
+        w.geometry(f"+{px}+{py}")
+        self._tip_win = w
+
     def _set_alpha(self):
         v = self.alpha_var.get()
         self.attributes("-alpha", v)
@@ -752,6 +834,11 @@ class Widget(tk.Tk):
 
     def _motion(self, e):
         self.canvas.config(cursor="hand2" if self._hit(e.x, e.y) else "")
+        text = self._tip_at(e.x, e.y)
+        if text != self._tip_key:
+            self._tip_hide()
+            if text:
+                self._tip_job = self.after(600, lambda: self._tip_show(text, e.x_root, e.y_root))
 
     def _press(self, e):
         if self._hit(e.x, e.y):
@@ -858,11 +945,12 @@ class Widget(tk.Tk):
                     continue
                 label = f"{names.get(prov, prov)} {wname}"
                 # 사용률은 창 안에서 줄지 않으므로, 줄었으면 리셋. (Claude는 리셋 후 resets_at이 None이라 시각 비교로는 못 잡음)
-                if pct < prev_pct - 0.5:
-                    self._alert(f"{label} 한도가 리셋됐어요 ({int(pct)}%)", C_OK, prov)
+                # 알림 피로를 줄이기 위해 80% 경고와 리셋은 5시간 창만, 100% 소진은 두 창 모두.
+                if pct < prev_pct - 0.5 and wkey == "primary":
+                    self._alert(f"{label} 한도가 리셋됐어요 ({int(pct)}%)", C_OK, prov, sound=True)
                 elif prev_pct < 100 <= pct:
-                    self._alert(f"{label} 한도 소진 · {fmt_remaining(reset)} 리셋", C_BAD, prov)
-                elif prev_pct < 80 <= pct:
+                    self._alert(f"{label} 한도 소진 · {fmt_remaining(reset)} 리셋", C_BAD, prov, sound=True)
+                elif prev_pct < 80 <= pct and wkey == "primary":
                     self._alert(f"{label} 80% 넘었어요 · {fmt_remaining(reset)} 리셋", accents.get(prov, C_WARN), prov)
 
     # ------------------------------------------------------------ 자동 업데이트
@@ -887,8 +975,13 @@ class Widget(tk.Tk):
             return
         ver, url = found
         log.info("update available: v%s", ver)
-        Popup(self, f"새 버전 v{ver} 있어요 · 여기를 클릭하면 업데이트", C_OK, None,
-              on_click=lambda: self._do_update(ver, url), seconds=60)
+        Popup(self, f"새 버전 v{ver} 있어요 · 클릭하면 안내 창이 떠요", C_OK, None,
+              on_click=lambda: self._confirm_update(ver, url), seconds=60)
+
+    def _confirm_update(self, ver, url):
+        ok = messagebox.askyesno("업데이트", f"v{ver}으로 업데이트할까요?\n\n내려받아 파일을 교체하고 위젯이 3초 뒤 자동으로 다시 켜집니다.\n설정과 위치는 그대로 유지됩니다.", parent=self)
+        if ok:
+            self._do_update(ver, url)
 
     def _do_update(self, ver, url):
         Popup(self, f"v{ver} 내려받는 중…", INK_SOFT, None, seconds=30)
@@ -917,7 +1010,7 @@ class Widget(tk.Tk):
         subprocess.Popen([str(exe), "-c", helper], creationflags=flags | 0x00000008 | 0x00000200, close_fds=True)
         self.destroy()
 
-    def _alert(self, text, color, prov=None):
+    def _alert(self, text, color, prov=None, sound=False):
         self.banner = (text, color, time.monotonic() + BANNER_SEC)
         log.info("alert: %s", text)
         if self.state.get("popup", True):
@@ -927,7 +1020,7 @@ class Widget(tk.Tk):
                 log.exception("popup failed")
         if self.state.get("toast", False) and TOAST_PS1.exists():
             notify_windows("AI 사용량 위젯", text)
-        if self.state.get("sound", True):
+        if sound and self.state.get("sound", True):
             try:
                 winsound.MessageBeep(winsound.MB_ICONASTERISK)
             except Exception:  # noqa: BLE001
@@ -1009,9 +1102,15 @@ class Widget(tk.Tk):
         ok_at = self.state.get("ok_at") or {}
         parts = []
         for k in failed:
+            err = (self.errors.get(k) or self.error or "").lower()
+            if "expired" in err or "re-authenticate" in err or "credentials is off" in err or "not logged in" in err:
+                parts.append(f"{names.get(k, k)} 재로그인 필요 · install.bat 다시 실행")
+                continue
             t = ok_at.get(k)
-            when = datetime.fromtimestamp(t).strftime("%H:%M") + " 값" if t else "값 없음"
-            parts.append(f"{names.get(k, k)} 조회 지연 ({when})")
+            if t:
+                parts.append(f"{names.get(k, k)} 조회 실패 · {datetime.fromtimestamp(t).strftime('%H:%M')} 값 유지")
+            else:
+                parts.append(f"{names.get(k, k)} 조회 실패 · doctor.bat 실행")
         return " · ".join(parts)
 
     def _status(self):
@@ -1082,6 +1181,7 @@ class Widget(tk.Tk):
         d.rounded_rectangle((0, 0, MINI_W * S - 1, MINI_H * S - 1), radius=(MINI_H // 2) * S,
                             outline=CARD_EDGE, width=2 * S)
         self._buttons = {}
+        self._tips = [(0, 0, MINI_W, MINI_H, TIPS["mini"])]
         half = MINI_SEC_W
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
             ox = 8 + i * half
@@ -1093,11 +1193,13 @@ class Widget(tk.Tk):
             t7 = "–" if p7 is None else f"{int(round(p7))}%"
             x = ox + (30 if self.char != "none" else 4)
             d.text((x * S, 4 * S), name, font=self.f_tiny, fill=accent)           # 서비스 라벨 (윗줄)
+            d.text((x * S, (MINI_NUM_Y + 1) * S), "5h", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
+            x += d.textlength("5h", font=self.f_tiny) / S + 2
             d.text((x * S, MINI_NUM_Y * S), t5, font=self.f_num,
                    fill=(C_STALE if stale else pct_color(p5)), anchor="lm")
-            x += d.textlength(t5, font=self.f_num) / S + 4
-            d.text((x * S, MINI_NUM_Y * S), "·", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
-            x += 7
+            x += d.textlength(t5, font=self.f_num) / S + 5
+            d.text((x * S, (MINI_NUM_Y + 1) * S), "7d", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
+            x += d.textlength("7d", font=self.f_tiny) / S + 2
             d.text((x * S, MINI_NUM_Y * S), t7, font=self.f_small,
                    fill=(C_STALE if stale else pct_color(p7)), anchor="lm")
             if i < len(PROVIDERS) - 1:
@@ -1115,7 +1217,9 @@ class Widget(tk.Tk):
         d.rounded_rectangle((0, 0, W * S - 1, H * S - 1), radius=RADIUS * S, outline=CARD_EDGE, width=2 * S)
 
         self._buttons = {}
+        tips = []
         half = SEC_W
+        title_end = 0
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
             ox = 10 + i * half
             u = self.usage.get(key) or {}
@@ -1123,6 +1227,8 @@ class Widget(tk.Tk):
 
             tx = ox + (40 if self.char != "none" else 4)
             d.text((tx * S, 4 * S), name, font=self.f_title, fill=accent)
+            title_end = tx + d.textlength(name, font=self.f_title) / S
+            tips.append((ox, 2, tx + 90, 40, TIPS["title"].format(name=name)))
             sub = "오래된 값 (1시간 이상 조회 실패)" if stale and u else (u.get("login_method") or "")
             d.text((tx * S, 29 * S), sub, font=self.f_tiny, fill=C_WARN if stale and u else INK_SOFT)
 
@@ -1132,6 +1238,7 @@ class Widget(tk.Tk):
                 fp = fb["used_percent"]
                 bx0, bx1, by = ox + 146, ox + half - 30, 49
                 d.text((tx * S, (by - 5) * S), f"Fable 주간 {int(fp)}%", font=self.f_tiny, fill=INK_SOFT)
+                tips.append((tx, by - 7, bx1, by + 8, TIPS["fable"]))
                 d.rounded_rectangle((bx0 * S, by * S, bx1 * S, (by + 4) * S), radius=2 * S, fill=TRACK)
                 fx = bx0 + (bx1 - bx0) * min(fp, 100) / 100
                 if fx > bx0 + 2:
@@ -1142,6 +1249,7 @@ class Widget(tk.Tk):
                 win = u.get(wkey) or {}
                 gx, gy = ox + j * 138, 62
                 self._gauge(d, gx, gy, win.get("used_percent"), stale)
+                tips.append((gx, gy, gx + GAUGE + 100, gy + 40, TIPS[wkey]))
                 d.text(((gx + GAUGE + 6) * S, (gy + 9) * S), wname, font=self.f_small, fill=INK)
                 d.text(((gx + GAUGE + 6) * S, (gy + 27) * S), fmt_remaining(win.get("resets_at"), win.get("used_percent")),
                        font=self.f_tiny, fill=INK_SOFT)
@@ -1150,14 +1258,21 @@ class Widget(tk.Tk):
                     if hint:
                         d.ellipse(((gx + GAUGE + 7) * S, (gy + 48) * S, (gx + GAUGE + 12) * S, (gy + 53) * S), fill=hint[1])
                         d.text(((gx + GAUGE + 15) * S, (gy + 43) * S), hint[0], font=self.f_tiny, fill=hint[1])
+                        tips.append((gx + GAUGE + 4, gy + 41, gx + GAUGE + 100, gy + 56, TIPS["pace"]))
 
             if i < len(PROVIDERS) - 1:
                 lx = (ox + half - 6) * S
                 d.line((lx, 12 * S, lx, (H - 12) * S), fill=TRACK, width=2 * S)
 
-        # 상태 / 알림 배너 (우하단)
+        # 상태 / 알림 배너 (우상단, 버튼 왼쪽). 마지막 제목을 침범하지 않도록 폭 제한
         msg, col, is_banner = self._status()
-        rx, cy = W - 56, 14   # 새로고침 버튼 왼쪽에 붙임
+        rx, cy = W - 56, 14
+        max_w = max(60, rx - title_end - 12)
+        if d.textlength(msg, font=self.f_tiny) / S > max_w:
+            while msg and d.textlength(msg + "…", font=self.f_tiny) / S > max_w:
+                msg = msg[:-1]
+            msg = msg.rstrip(" ·") + "…"
+        tips.append((rx - max_w, cy - 9, rx, cy + 9, TIPS["status"]))
         if is_banner:
             tw = d.textlength(msg, font=self.f_tiny)
             d.rounded_rectangle((rx * S - tw - 12 * S, (cy - 8) * S, rx * S, (cy + 8) * S), radius=6 * S, fill=col)
@@ -1177,6 +1292,7 @@ class Widget(tk.Tk):
                 d.line(((cx - a) * S, (cy + a) * S, (cx + a) * S, (cy - a) * S), fill=INK_SOFT, width=2 * S)
             self._buttons[label] = (cx - r - 2, cy - r - 2, cx + r + 2, cy + r + 2)
 
+        self._tips = tips
         out = img.resize((W, H), Image.LANCZOS)
         mask = Image.new("L", (W, H), 0)
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, W - 1, H - 1), radius=RADIUS, fill=255)
