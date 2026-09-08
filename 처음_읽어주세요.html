@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 사용량 위젯 - 처음 읽어주세요</title>
+<style>
+  body { margin: 0; background: #f6f1ea; color: #3a3330; font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 17px; line-height: 1.5; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  .sub { color: #7a6f68; margin: 0 0 28px; }
+  h2 { font-size: 22px; margin: 44px 0 14px; padding-left: 12px; border-left: 6px solid #f28c6b; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card { background: #fff8f1; border-radius: 18px; padding: 18px 18px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+  .card .n { display: inline-block; width: 34px; height: 34px; line-height: 34px; text-align: center; border-radius: 50%; background: #f28c6b; color: #fff; font-weight: 700; font-size: 18px; margin-bottom: 10px; }
+  .card b { display: block; font-size: 19px; margin-bottom: 6px; }
+  .card p { margin: 0; color: #5d534d; }
+  .card img { width: 100%; border-radius: 12px; margin-top: 12px; background: #f3efe9; }
+  .wide { grid-column: 1 / -1; }
+  .key { display: inline-block; background: #ece5dc; border-radius: 6px; padding: 0 8px; font-weight: 700; }
+  .file { font-family: Consolas, monospace; background: #ece5dc; border-radius: 6px; padding: 0 6px; }
+  .note { background: #fff3d6; border-radius: 12px; padding: 12px 16px; margin-top: 14px; }
+  table { border-collapse: collapse; width: 100%; background: #fff8f1; border-radius: 14px; overflow: hidden; }
+  td { padding: 12px 14px; border-top: 1px solid #efe6dc; vertical-align: top; }
+  td:first-child { font-weight: 700; white-space: nowrap; width: 34%; }
+  .full { width: 100%; border-radius: 14px; margin: 10px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI 사용량 위젯</h1>
+  <p class="sub">Claude와 GPT(Codex·ChatGPT Work)를 얼마나 썼는지 화면 한구석에 항상 보여줍니다.</p>
+  <img class="full" src="docs/preview.png" alt="위젯 화면">
+
+  <h2>설치 (약 5분)</h2>
+  <div class="steps">
+    <div class="card"><span class="n">1</span><b>압축 풀기</b><p>ZIP을 아무 폴더에나 풉니다. 다운로드 폴더여도 됩니다. 설치가 끝나면 안전한 곳으로 옮겨 줍니다.</p></div>
+    <div class="card"><span class="n">2</span><b><span class="file">install.bat</span> 더블클릭</b><p>파란 "Windows의 PC 보호" 창 → <span class="key">추가 정보</span> → <span class="key">실행</span><br>"변경을 허용하시겠어요?" 창 → <span class="key">예</span></p></div>
+    <div class="card"><span class="n">3</span><b>검은 창의 질문에 답하기</b><p>Claude 로그인 창이 뜨면 → <span class="key">Claude account with subscription</span> 선택 → 브라우저 로그인 → <span class="file">&gt;</span> 입력창이 보이면 <span class="file">/exit</span> 입력<br>"Codex나 ChatGPT Work를 쓰시나요?" → 쓰면 <span class="key">Y</span>, 채팅만 쓰면 <span class="key">N</span><br>"Windows 켤 때 자동 실행?" → <span class="key">Y</span> 또는 <span class="key">N</span></p></div>
+    <div class="card"><span class="n">4</span><b>끝</b><p>화면 왼쪽 위에 카드가 뜨면 설치 완료입니다. 다운로드 폴더의 압축 푼 폴더는 지워도 됩니다.</p></div>
+  </div>
+
+  <h2>평소 사용</h2>
+  <div class="steps">
+    <div class="card"><b>켜기 · 다시 보이기</b><p>바탕화면 <span class="key">AI 사용량 위젯</span> 더블클릭. 이미 켜져 있으면 앞으로 나옵니다.</p></div>
+    <div class="card"><b>끄기 · 설정</b><p>위젯 <span class="key">우클릭</span> → 맨 아래 <span class="key">종료</span>. 다른 설정도 이 메뉴에 있습니다.</p></div>
+    <div class="card"><b>위치 이동</b><p>카드를 <span class="key">드래그</span>하면 됩니다.</p></div>
+    <div class="card"><b>뜻 보기</b><p>숫자나 글자 위에 마우스를 올리면 설명이 뜹니다.</p></div>
+    <div class="card wide"><b>작업표시줄에 붙이기</b><p>카드를 <span class="key">더블클릭</span>하면 작업표시줄 안의 작은 모드로 바뀝니다. 다시 더블클릭하면 카드로 돌아옵니다. 작은 모드는 좌우로 드래그해 자리를 옮길 수 있습니다.</p><img src="docs/taskbar-mini.png" alt="작업표시줄 미니 모드"></div>
+    <div class="card wide"><b>우클릭 메뉴</b><img src="docs/menu.png" alt="우클릭 메뉴"></div>
+  </div>
+
+  <h2>화면 읽는 법</h2>
+  <table>
+    <tr><td>5시간</td><td>지금 쓰는 세션의 사용량. 아래 회색 글자는 리셋까지 남은 시간</td></tr>
+    <tr><td>7일</td><td>일주일 한도의 사용량</td></tr>
+    <tr><td>색</td><td>초록 여유 · 노랑 절반 넘음 · 빨강 거의 다 씀</td></tr>
+    <tr><td>GPT 숫자</td><td>Codex·ChatGPT Work(에이전트) 사용량. 일반 채팅은 한도가 없어 해당 없음</td></tr>
+    <tr><td>"N분 전 값"</td><td>잠시 조회가 안 돼 마지막 값을 보여주는 중. 보통 저절로 돌아옵니다</td></tr>
+    <tr><td>"재로그인 필요"</td><td>아래 문제 해결 메뉴에서 <span class="key">Claude 다시 로그인</span></td></tr>
+  </table>
+
+  <h2>문제가 생기면</h2>
+  <p>위젯 <span class="key">우클릭</span> → <span class="key">문제 해결</span></p>
+  <img class="full" src="docs/menu-fix.png" alt="문제 해결 메뉴">
+  <table>
+    <tr><td>점검 실행</td><td>어디가 막혔는지와 해결 방법을 보여줍니다. 뭐가 문제인지 모를 때 먼저 누르세요</td></tr>
+    <tr><td>Claude 다시 로그인</td><td>"재로그인 필요"가 뜰 때</td></tr>
+    <tr><td>GPT 연결하기</td><td>설치 때 N을 눌렀다가 나중에 GPT도 보고 싶을 때</td></tr>
+    <tr><td>설치 폴더 열기</td><td>이 파일들이 있는 곳. 다운로드 폴더를 지웠어도 여기 있습니다</td></tr>
+  </table>
+  <div class="note">위젯이 아예 안 켜지면: 설치 폴더의 <span class="file">doctor.bat</span> 더블클릭.<br>설치 폴더는 보통 <span class="file">C:\Users\(내이름)\AppData\Local\Programs\ai-usage-widget</span> 입니다.</div>
+
+  <h2>제거</h2>
+  <p>설치 폴더의 <span class="file">uninstall.bat</span> 더블클릭. 바로가기·자동 실행·위젯 폴더만 지웁니다.<br>함께 설치된 프로그램(Python, Win-CodexBar, Claude Code, Node.js)은 다른 용도로도 쓰일 수 있어 남겨 둡니다. 지우려면 Windows 설정 → 앱에서 각각 제거하세요.</p>
+</main>
+</body>
+</html>

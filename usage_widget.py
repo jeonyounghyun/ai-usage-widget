@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI Usage Widget - Claude / GPT(Codex) 사용량 한도를 화면에 항상 표시하는 파스텔 카드 위젯.
 RunCat처럼 픽셀 고양이가 달리며, 5시간 한도를 많이 쓸수록 빨리 달리고 100%면 잠든다.
 
@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -85,7 +85,7 @@ UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 UPDATE_CHECK_SEC = 24 * 3600          # 자동 업데이트 확인 주기
 UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "install.ps1", "configure_codexbar.ps1",
                 "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE",
-                "처음_읽어주세요.txt")
+                "처음_읽어주세요.html")
 HERE = Path(__file__).resolve().parent
 SHOW_FLAG = HERE / "show.flag"          # 바로가기가 "이미 켜져 있음"을 알리는 신호 파일 → 위젯을 앞으로
 STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
@@ -176,7 +176,7 @@ CAT_PX_MINI = 2
 # 마우스를 올리면 나오는 설명
 TIPS = {
     "title": "{name} 사용량. 색: 초록 50% 미만 · 노랑 50~80% · 빨강 80% 이상",
-    "title_codex": "GPT 사용량 = Codex·ChatGPT Work 에이전트 한도 (ChatGPT 일반 채팅 한도는 아님). 색: 초록 <50% · 노랑 50~80% · 빨강 80%+",
+    "title_codex": "GPT 사용량 = Codex·ChatGPT Work 에이전트 한도 (일반 채팅은 한도가 없어 해당 없음). 색: 초록 <50% · 노랑 50~80% · 빨강 80%+",
     "primary": "5시간 창: 최근 5시간 동안 쓴 비율. 100%가 되면 표시된 시각에 0%로 리셋",
     "secondary": "7일 창: 최근 7일 동안 쓴 비율. 5시간 창과 별도로 계산",
     "fable": "Fable 모델 전용 주간 한도. 7일 전체 한도보다 먼저 차는 경우가 많음",

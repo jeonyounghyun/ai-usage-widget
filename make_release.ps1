@@ -8,7 +8,7 @@ $name = "ai-usage-widget-v$ver"
 New-Item -ItemType Directory dist -Force | Out-Null
 $zip = Join-Path (Resolve-Path dist) "$name.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
-$files = @("처음_읽어주세요.txt", "install.bat", "install.ps1", "configure_codexbar.ps1", "toggle_widget.bat", "usage_widget.py", "toast.ps1",
+$files = @("처음_읽어주세요.html", "install.bat", "install.ps1", "configure_codexbar.ps1", "toggle_widget.bat", "usage_widget.py", "toast.ps1",
            "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE") + (Get-ChildItem docs -Filter *.png | ForEach-Object { "docs/" + $_.Name })
 # py 런처만 있고 Python이 없는 경우가 있어 실제 실행되는 것을 고른다
 $py = $null; $pyArgs = @()

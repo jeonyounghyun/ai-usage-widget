@@ -106,7 +106,7 @@ function Set-WidgetState([string]$key, $value) {
 }
 
 function Do-GptConnect {
-    Say "  GPT 숫자는 ChatGPT의 에이전트 한도(Codex, ChatGPT Work)입니다. ChatGPT 일반 채팅 한도는 볼 수 없습니다."
+    Say "  GPT 숫자는 Codex·ChatGPT Work(에이전트) 사용량입니다. 일반 채팅은 한도가 없어 해당 없습니다."
     if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
         if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
             Say "  GPT 로그인 도구(Codex CLI)를 설치하려면 Node.js가 먼저 필요합니다. 설치합니다 (1~2분, '허용' 창이 뜨면 예)..."
@@ -180,7 +180,7 @@ Say "  =============================================="
 Say ""
 Say "  이 위젯이 보여주는 것:"
 Say "   - Claude: claude.ai 채팅 사용량 (Claude Code와 같은 한도)"
-Say "   - GPT: Codex·ChatGPT Work 사용량 (ChatGPT 일반 채팅 한도는 볼 수 없습니다)"
+Say "   - GPT: Codex·ChatGPT Work 사용량 (일반 채팅은 한도가 없어 해당 없음)"
 Say ""
 Say "  설치 중 이런 창이 뜨면:"
 Say "   - 파란색 'Windows의 PC 보호' → '추가 정보' → '실행'"
@@ -237,7 +237,7 @@ else { [void](Do-ClaudeLogin "위젯이 Claude 사용량을 읽으려면 한 번
 
 # ---------- 4. GPT (선택)
 Head "[4/7] GPT 사용량"
-Say "  GPT 숫자는 ChatGPT의 에이전트 한도(Codex, ChatGPT Work)입니다. ChatGPT 일반 채팅 한도는 볼 수 없습니다."
+Say "  GPT 숫자는 Codex·ChatGPT Work(에이전트) 사용량입니다. 일반 채팅은 한도가 없어 해당 없습니다."
 $providers = "claude"
 $ans = Ask "Codex나 ChatGPT Work를 쓰시나요? 쓰면 Y, 채팅만 쓰면 N [Y/N]"
 if ($ans -match "^[Yy]") {
