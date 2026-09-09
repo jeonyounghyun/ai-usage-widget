@@ -22,7 +22,7 @@ FIXES = {
     "expired": "Claude 로그인이 만료됨 -> 이 폴더의 relogin.bat 을 더블클릭 (또는 위젯 우클릭 -> 문제 해결 -> Claude 다시 로그인)",
     "rate": "조회가 너무 잦아 잠시 막힘 -> 5~10분 뒤 저절로 풀림. 작업표시줄 시계 옆에 CodexBar 아이콘이 있으면 우클릭 -> Quit",
     "claude_login": "Claude 로그인이 없음 -> 이 폴더의 relogin.bat 을 더블클릭 (Claude account with subscription 선택)",
-    "codex_login": "GPT 로그인이 없음 -> 이 폴더의 connect_gpt.bat 을 더블클릭. GPT를 안 보면 위젯 우클릭 -> 'GPT 표시' 해제",
+    "codex_login": "GPT 로그인이 없거나 거부됨 -> 이 폴더의 connect_gpt.bat 을 더블클릭 (다시 로그인함). GPT를 안 보면 위젯 우클릭 -> 'GPT 표시' 해제",
     "cli": "사용량 읽는 도구(Win-CodexBar)가 없음 -> 이 폴더의 install.bat 을 더블클릭",
 }
 
@@ -94,7 +94,7 @@ def diagnose(msg):
         return FIXES["expired"]
     if "rate limit" in m:
         return FIXES["rate"]
-    if "not logged in" in m or "no auth" in m or "auth.json" in m:
+    if "not logged in" in m or "no auth" in m or "auth.json" in m or "authentication required" in m or "account not found" in m:
         return FIXES["codex_login"]
     if "no cookies" in m or "app-bound" in m:
         return "브라우저 쿠키 관련 안내는 무시해도 됨 (위젯은 쿠키를 쓰지 않음)"
@@ -134,6 +134,42 @@ def check_usage():
             print("     해결: " + diagnose(err))
 
 
+def check_widget():
+    """위젯이 왜 안 뜨는지: 바로가기가 쓸 pythonw, 실행 중인지, 마지막 로그."""
+    section("5. 위젯 실행 상태")
+    here = Path(__file__).resolve().parent
+    rec = here / "pythonw.txt"
+    pyw = rec.read_text(encoding="utf-8").strip() if rec.exists() else ""
+    if pyw and Path(pyw).exists():
+        print(OK + f"위젯 실행용 pythonw: {pyw}")
+    else:
+        cand = Path(sys.executable).with_name("pythonw.exe")
+        if cand.exists():
+            rec.write_text(str(cand), encoding="utf-8")
+            print(OK + f"위젯 실행용 pythonw 기록함: {cand}")
+        else:
+            print(BAD + "pythonw.exe 를 찾지 못함 -> 이 폴더의 install.bat 을 더블클릭")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*usage_widget*' } | Measure-Object | Select-Object -Expand Count"],
+                             capture_output=True, text=True, timeout=30)
+        n = int((out.stdout or "0").strip() or 0)
+    except Exception:  # noqa: BLE001
+        n = -1
+    if n > 0:
+        print(OK + "위젯이 실행 중 (안 보이면 바탕화면 'AI 사용량 위젯' 더블클릭 -> 앞으로 나옴)")
+    elif n == 0:
+        print(BAD + "위젯이 꺼져 있음 -> 바탕화면 'AI 사용량 위젯' 더블클릭. 그래도 안 뜨면 아래 로그를 캡처")
+    log = here / "widget.log"
+    if log.exists():
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()[-5:]
+        print("     마지막 로그:")
+        for ln in lines:
+            print("       " + ln)
+    else:
+        print("     widget.log 없음 (위젯이 한 번도 안 켜졌음 = Python 실행 문제일 가능성)")
+
+
 def main():
     print("AI Usage Widget 점검 도구")
     check_python()
@@ -142,6 +178,7 @@ def main():
         check_usage()
     else:
         check_files()
+    check_widget()
     section("끝")
     print("[X] 항목을 위 '해결' 안내대로 처리한 뒤 바탕화면 'AI 사용량 위젯'을 더블클릭하세요.")
     print("그래도 안 되면 이 화면을 캡처해서 설치해 준 사람에게 보여주세요.")

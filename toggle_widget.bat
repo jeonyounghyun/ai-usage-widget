@@ -18,10 +18,13 @@ if %errorlevel%==1 (
     exit /b 0
 )
 
-rem --- find a windowless Python (pythonw): install-manager launcher > PATH > py launcher
+rem --- find a windowless Python (pythonw): recorded by installer > install-manager launcher > py launcher > PATH
+rem     (pythonw.exe on PATH may be the Microsoft Store stub, which silently does nothing -> skip WindowsApps)
 set "PYW="
-if exist "%LOCALAPPDATA%\Python\bin\pythonw.exe" set "PYW=%LOCALAPPDATA%\Python\bin\pythonw.exe"
-if not defined PYW for /f "delims=" %%i in ('where pythonw 2^>nul') do if not defined PYW set "PYW=%%i"
+if exist "%~dp0pythonw.txt" for /f "usebackq delims=" %%i in ("%~dp0pythonw.txt") do if exist "%%i" set "PYW=%%i"
+if not defined PYW if exist "%LOCALAPPDATA%\Python\bin\pythonw.exe" set "PYW=%LOCALAPPDATA%\Python\bin\pythonw.exe"
+if not defined PYW for /f "usebackq delims=" %%i in (`py -3 -c "import sys,os;p=os.path.join(os.path.dirname(sys.executable),'pythonw.exe');print(p if os.path.exists(p) else '')" 2^>nul`) do if not defined PYW set "PYW=%%i"
+if not defined PYW for /f "delims=" %%i in ('where pythonw 2^>nul') do if not defined PYW (echo %%i | find /i "WindowsApps" >nul || set "PYW=%%i")
 if not defined PYW for /f "delims=" %%i in ('where pyw 2^>nul') do if not defined PYW set "PYW=%%i" & set "PYARGS=-3"
 if not defined PYW (
     echo Python not found. Run install.bat first.

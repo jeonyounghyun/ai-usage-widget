@@ -81,6 +81,15 @@ function Do-ClaudeLogin([string]$reason) {
     return $false
 }
 
+function Probe-Provider([string]$name) {
+    # CodexBar CLI로 실제 조회. 성공이면 "", 실패면 오류 문구를 돌려준다.
+    if (-not (Test-Path $cli)) { return "cli missing" }
+    $out = (& $cli usage -p $name --source oauth --json --no-color 2>&1 | Out-String)
+    if ($out -match '"error"\s*:\s*"((?:[^"\\]|\\.)*)"') { return $Matches[1] }
+    if ($out -match '"used_percent"') { return "" }
+    return "no data"
+}
+
 function Configure-CodexBar([string]$providers) {
     if (-not (Test-Path $cli)) { return $false }
     $settings = Join-Path $env:APPDATA "CodexBar\settings.json"
@@ -123,9 +132,18 @@ function Do-GptConnect {
         }
     }
     if (-not (Get-Command codex -ErrorAction SilentlyContinue)) { Blocked "Node.js / Codex CLI"; return $false }
-    if (Test-Path "$env:USERPROFILE\.codex\auth.json") {
-        Say "  GPT는 이미 로그인되어 있습니다."
-    } else {
+    $need = -not (Test-Path "$env:USERPROFILE\.codex\auth.json")
+    if (-not $need) {
+        [void](Configure-CodexBar "claude,codex")
+        $err = Probe-Provider "codex"
+        if (-not $err) { Say "  GPT는 이미 로그인되어 있습니다 (조회 확인)." }
+        elseif ($err -match "authentication|not logged|auth|expired|401|unauthorized|account not found") {
+            Say "  GPT 로그인 파일은 있지만 조회가 거부되었습니다 ($err). 다시 로그인합니다."
+            codex logout 2>&1 | Out-Null
+            $need = $true
+        } else { Say "  GPT 로그인 확인됨. (조회 확인 실패: $err - 잠시 뒤 위젯에서 다시 시도합니다)" }
+    }
+    if ($need) {
         Say "  브라우저가 열리면 ChatGPT 계정으로 로그인하세요. 끝나면 이 창으로 자동으로 돌아옵니다."
         codex login
     }
@@ -222,6 +240,10 @@ $py = $found[0]; $pyArgs = $found[1]
 Say "  확인됨. 그림 부품(Pillow) 설치..."
 & $py @pyArgs -m pip install --user --quiet --disable-pip-version-check pillow
 if ($LASTEXITCODE -ne 0) { Warn "그림 부품 설치 실패. 인터넷 연결을 확인한 뒤 install.bat을 다시 실행하세요."; Pause-Enter; exit 1 }
+# 위젯을 띄울 창 없는 Python(pythonw.exe) 경로를 기록해 둔다. PATH의 pythonw는 Microsoft Store 스텁일 수 있어 그대로 쓰면 아무것도 안 뜬다.
+$pyw = (& $py @pyArgs -c "import sys,os; p=os.path.join(os.path.dirname(sys.executable),'pythonw.exe'); print(p if os.path.exists(p) else '')").Trim()
+if ($pyw) { [IO.File]::WriteAllText((Join-Path $Here "pythonw.txt"), $pyw, (New-Object System.Text.UTF8Encoding($false))); Say "  위젯 실행용 Python: $pyw" }
+else { Warn "pythonw.exe를 찾지 못했습니다. 위젯이 안 뜨면 doctor.bat을 실행하세요." }
 
 # ---------- 2. Win-CodexBar
 Head "[2/7] Win-CodexBar (사용량을 읽어 오는 도구)"
@@ -235,7 +257,15 @@ Say "  확인됨."
 # ---------- 3. Claude 로그인
 Head "[3/7] Claude 로그인"
 $st = Claude-LoginState
-if ($st -eq "ok") { Say "  이미 로그인되어 있습니다." }
+if ($st -eq "ok") {
+    # 파일상 유효해도 서버가 거부할 수 있으니 실제로 한 번 조회해 본다 (조회 설정을 먼저 맞춤)
+    [void](Configure-CodexBar "claude,codex")
+    $err = Probe-Provider "claude"
+    if (-not $err) { Say "  이미 로그인되어 있습니다 (조회 확인)." }
+    elseif ($err -match "expired|re-authenticate|rejected|401|unauthorized|not logged") { $st = "expired"; Say "  로그인 파일은 있지만 서버가 거부했습니다: $err" }
+    else { Say "  이미 로그인되어 있습니다. (조회 확인 실패: $err - 잠시 뒤 위젯에서 다시 시도합니다)" }
+}
+if ($st -eq "ok") { }
 elseif ($st -eq "expired") { [void](Do-ClaudeLogin "로그인이 만료되어 다시 로그인합니다.") }
 else { [void](Do-ClaudeLogin "위젯이 Claude 사용량을 읽으려면 한 번 로그인이 필요합니다.") }
 
