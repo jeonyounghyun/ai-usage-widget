@@ -42,6 +42,19 @@ function Run-Interactive([string]$cmdline) {
     return $p.ExitCode
 }
 
+function Resolve-Exe([string]$name) {
+    # npm으로 깔린 도구는 claude.ps1 / claude.cmd 가 같이 있고 PowerShell은 .ps1을 고른다.
+    # cmd에 .ps1을 넘기면 실행이 아니라 편집기(VS Code 등)로 열리므로 .exe/.cmd 만 쓴다.
+    $c = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike "*.ps1" } | Select-Object -First 1
+    if ($c) { return $c.Source }
+    $any = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($any -and $any.Source -like "*.ps1") {
+        foreach ($ext in @(".cmd", ".exe", ".bat")) { $alt = [IO.Path]::ChangeExtension($any.Source, $ext); if (Test-Path $alt) { return $alt } }
+    }
+    if ($any) { return $any.Source }
+    return $null
+}
+
 function Find-Claude {
     if (Get-Command claude -ErrorAction SilentlyContinue) { return "claude" }
     if (Test-Path "$env:USERPROFILE\.local\bin\claude.exe") { return "$env:USERPROFILE\.local\bin\claude.exe" }
@@ -71,7 +84,7 @@ function Do-ClaudeLogin([string]$reason) {
             $exe = "$env:USERPROFILE\.local\bin\claude.exe"
         } else { Blocked "Claude Code"; return $false }
     }
-    if ($exe -eq "claude") { $exe = (Get-Command claude).Source }
+    if ($exe -eq "claude") { $exe = Resolve-Exe "claude" }
     Say ""
     Say "  $reason"
     Say "  잠시 후 브라우저가 열립니다:"
@@ -156,13 +169,13 @@ function Do-GptConnect {
         if (-not $err) { Say "  GPT는 이미 로그인되어 있습니다 (조회 확인)." }
         elseif ($err -match "authentication|not logged|auth|expired|401|unauthorized|account not found") {
             Say "  GPT 로그인 파일은 있지만 조회가 거부되었습니다 ($err). 다시 로그인합니다."
-            & (Get-Command codex).Source logout 2>&1 | Out-Null
+            & (Resolve-Exe "codex") logout 2>&1 | Out-Null
             $need = $true
         } else { Say "  GPT 로그인 확인됨. (조회 확인 실패: $err - 잠시 뒤 위젯에서 다시 시도합니다)" }
     }
     if ($need) {
         Say "  브라우저가 열리면 ChatGPT 계정으로 로그인하세요. 끝나면 이 창으로 자동으로 돌아옵니다."
-        [void](Run-Interactive ('"' + (Get-Command codex).Source + '" login'))
+        [void](Run-Interactive ('"' + (Resolve-Exe "codex") + '" login'))
     }
     if (-not (Test-Path "$env:USERPROFILE\.codex\auth.json")) { Warn "GPT 로그인이 확인되지 않았습니다. 나중에 connect_gpt.bat 을 다시 실행하세요."; return $false }
     Set-WidgetState "show_gpt" $true
