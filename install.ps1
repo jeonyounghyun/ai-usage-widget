@@ -35,6 +35,13 @@ function Find-Python {
     return $null
 }
 
+function Run-Interactive([string]$cmdline) {
+    # 로그인 도구(claude, codex)는 화면 출력이 콘솔이 아니면 "입력 없음"으로 보고 바로 끝난다.
+    # 이 스크립트의 함수 출력은 호출부에 붙잡히므로, 별도 프로세스로 띄워 콘솔을 직접 물려준다.
+    $p = Start-Process cmd.exe -ArgumentList "/c", ('"' + $cmdline + '"') -Wait -NoNewWindow -PassThru
+    return $p.ExitCode
+}
+
 function Find-Claude {
     if (Get-Command claude -ErrorAction SilentlyContinue) { return "claude" }
     if (Test-Path "$env:USERPROFILE\.local\bin\claude.exe") { return "$env:USERPROFILE\.local\bin\claude.exe" }
@@ -64,20 +71,30 @@ function Do-ClaudeLogin([string]$reason) {
             $exe = "$env:USERPROFILE\.local\bin\claude.exe"
         } else { Blocked "Claude Code"; return $false }
     }
+    if ($exe -eq "claude") { $exe = (Get-Command claude).Source }
     Say ""
     Say "  $reason"
-    Say "  잠시 후 검은 화면이 열립니다:"
-    Say "    1) 로그인 방식을 물으면 방향키로 'Claude account with subscription' 을 고르고 Enter"
-    Say "    2) 브라우저가 열리면 Claude 계정으로 로그인하고 'Authorize'(허용) 클릭"
-    Say "    3) 브라우저에 코드가 보이면 복사해서 검은 화면에 붙여넣고 Enter (자동으로 넘어가기도 함)"
-    Say "    4) 검은 화면에 '>' 입력창이 나타나면 로그인 완료입니다. /exit 를 입력하고 Enter → 여기로 돌아옵니다"
-    Say "  이미 로그인된 상태면 1~3이 안 나오고 바로 '>' 입력창이 뜹니다. 그때는 /exit 만 입력하세요."
-    Say "  (다른 계정으로 바꾸려면 '>' 입력창에 /login 을 입력)"
+    Say "  잠시 후 브라우저가 열립니다:"
+    Say "    1) Claude 계정으로 로그인하고 'Authorize'(허용) 클릭"
+    Say "    2) 브라우저에 코드가 보이면 복사해서 이 검은 화면에 붙여넣고 Enter (자동으로 넘어가기도 함)"
+    Say "    3) 이 화면에 로그인 완료 문구가 나오면 끝입니다"
     Pause-Enter "준비되면 Enter"
-    & $exe
-    $st = Claude-LoginState
-    if ($st -eq "ok") { Say "  Claude 로그인 완료."; return $true }
-    Warn "로그인이 확인되지 않았습니다 (상태: $st). 나중에 relogin.bat 을 더블클릭하면 이 단계만 다시 합니다."
+    [void](Run-Interactive ('"' + $exe + '" auth login'))
+    [void](Configure-CodexBar "claude,codex")
+    $err = Probe-Provider "claude"
+    if (-not $err) { Say "  Claude 로그인 완료 (조회 확인)."; return $true }
+    if ($err -match "expired|re-authenticate|rejected|401|unauthorized|not logged") {
+        # 구버전 도구는 auth login 이 없을 수 있음 → 대화형으로 한 번 더
+        Say "  아직 로그인이 확인되지 않습니다. 검은 화면을 한 번 더 엽니다:"
+        Say "    - 로그인 방식을 물으면 'Claude account with subscription' 선택 → 브라우저 로그인"
+        Say "    - '>' 입력창이 바로 뜨면 /login 을 입력해 다시 로그인 → 끝나면 /exit"
+        Pause-Enter "준비되면 Enter"
+        [void](Run-Interactive ('"' + $exe + '"'))
+        $err = Probe-Provider "claude"
+        if (-not $err) { Say "  Claude 로그인 완료 (조회 확인)."; return $true }
+    }
+    Warn "로그인이 확인되지 않았습니다: $err"
+    Say "   나중에 relogin.bat 을 더블클릭하면 이 단계만 다시 합니다."
     return $false
 }
 
@@ -139,13 +156,13 @@ function Do-GptConnect {
         if (-not $err) { Say "  GPT는 이미 로그인되어 있습니다 (조회 확인)." }
         elseif ($err -match "authentication|not logged|auth|expired|401|unauthorized|account not found") {
             Say "  GPT 로그인 파일은 있지만 조회가 거부되었습니다 ($err). 다시 로그인합니다."
-            codex logout 2>&1 | Out-Null
+            & (Get-Command codex).Source logout 2>&1 | Out-Null
             $need = $true
         } else { Say "  GPT 로그인 확인됨. (조회 확인 실패: $err - 잠시 뒤 위젯에서 다시 시도합니다)" }
     }
     if ($need) {
         Say "  브라우저가 열리면 ChatGPT 계정으로 로그인하세요. 끝나면 이 창으로 자동으로 돌아옵니다."
-        codex login
+        [void](Run-Interactive ('"' + (Get-Command codex).Source + '" login'))
     }
     if (-not (Test-Path "$env:USERPROFILE\.codex\auth.json")) { Warn "GPT 로그인이 확인되지 않았습니다. 나중에 connect_gpt.bat 을 다시 실행하세요."; return $false }
     Set-WidgetState "show_gpt" $true
