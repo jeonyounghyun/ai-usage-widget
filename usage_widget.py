@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -82,6 +82,7 @@ STALE_AFTER_SEC = 3600                # 마지막 성공 후 이 시간이 지�
 CONFIG_PATH = Path(__file__).with_name("widget_state.json")
 UPDATE_REPO = "jeonyounghyun/ai-usage-widget"
 UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30"
 UPDATE_CHECK_SEC = 24 * 3600          # 자동 업데이트 확인 주기
 UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "install.ps1", "configure_codexbar.ps1",
                 "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE",
@@ -337,6 +338,19 @@ def check_update():
         if a.get("name", "").endswith(".zip"):
             return tag.lstrip("v"), a["browser_download_url"]
     return None
+
+
+def release_notes_between(old_ver, new_ver):
+    """old_ver 초과 ~ new_ver 이하 릴리즈의 (버전, 노트) 목록 (오래된 순). 실패 시 예외."""
+    req = urllib.request.Request(RELEASES_API, headers={"User-Agent": f"ai-usage-widget/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        rel = json.loads(r.read().decode("utf-8"))
+    out = []
+    for d in rel:
+        v = d.get("tag_name", "").lstrip("v")
+        if _ver_tuple(old_ver) < _ver_tuple(v) <= _ver_tuple(new_ver):
+            out.append((v, (d.get("body") or "").strip()))
+    return sorted(out, key=lambda x: _ver_tuple(x[0]))
 
 
 def apply_update(zip_url, target_dir):
@@ -697,7 +711,7 @@ class Widget(tk.Tk):
 
         self.f_title = font("Paperlogy-7Bold.ttf", 19)
         self.f_num = font("Paperlogy-7Bold.ttf", 15)
-        self.f_num_s = font("Paperlogy-7Bold.ttf", 12)
+        self.f_num_s = font("Paperlogy-7Bold.ttf", 11)
         self.f_small = font("Pretendard-SemiBold.ttf", 12)
         self.f_tiny = font("Pretendard-Medium.ttf", 11)
         self.f_pop = font("Pretendard-SemiBold.ttf", 13)
@@ -733,6 +747,9 @@ class Widget(tk.Tk):
         self._tip_win = None
         self._tip_job = None
         self._tip_key = None
+        prev = self.state.get("updated_from")
+        if prev and prev != VERSION:
+            self.after(2000, lambda: self._show_whats_new(prev))
         if not self.state.get("guided"):
             self.after(1500, self._first_run_guide)
         self._ticks = 0
@@ -1224,6 +1241,48 @@ class Widget(tk.Tk):
                     on_click=lambda: self._confirm_update(ver, url), seconds=None)
         self._pending_update = (ver, url, pop)
 
+    def _show_whats_new(self, prev):
+        """업데이트 직후: 건너뛴 버전까지 포함해 변경 내용을 알림 → 클릭하면 창으로."""
+        self.state["updated_from"] = None
+        self._save_state()
+
+        def run():
+            try:
+                notes = release_notes_between(prev, VERSION)
+            except Exception as ex:  # noqa: BLE001
+                log.warning("release notes failed: %s", ex)
+                notes = []
+            self.after(0, lambda: show(notes))
+
+        def show(notes):
+            n = len(notes)
+            text = f"v{prev} → v{VERSION} 업데이트됨" + (f" · 변경 내용 {n}건, 클릭해서 보기" if n else "")
+            Popup(self, text, C_OK, None, on_click=(lambda: self._whats_new_window(prev, notes)) if n else None,
+                  seconds=None if n else 15)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _whats_new_window(self, prev, notes):
+        win = tk.Toplevel(self)
+        win.title(f"업데이트 내용 v{prev} → v{VERSION}")
+        win.configure(bg=CARD)
+        win.attributes("-topmost", True)
+        frame = tk.Frame(win, bg=CARD); frame.pack(fill="both", expand=True)
+        sb = tk.Scrollbar(frame); sb.pack(side="right", fill="y")
+        txt = tk.Text(frame, width=64, height=min(28, 4 + sum(3 + n.count("\n") for _, n in notes)), wrap="word",
+                      bg=CARD, fg=INK, font=("Malgun Gothic", 10), relief="flat", padx=14, pady=10, yscrollcommand=sb.set)
+        sb.config(command=txt.yview)
+        txt.tag_configure("h", font=("Malgun Gothic", 11, "bold"), foreground="#f28c6b", spacing1=8)
+        for v, body in notes:
+            txt.insert("end", f"v{v}\n", "h")
+            txt.insert("end", (body or "(설명 없음)") + "\n\n")
+        txt.configure(state="disabled")
+        txt.pack(side="left", fill="both", expand=True)
+        tk.Button(win, text="닫기", command=win.destroy, bg=BTN_BG, fg=INK, relief="flat", padx=16).pack(pady=(0, 10))
+        win.update_idletasks()
+        x = self.winfo_x() + 20
+        y = self.winfo_y() + (H if not self.mini else -win.winfo_height() - 20)
+        win.geometry(f"+{max(0, x)}+{max(0, y)}")
+
     def _confirm_update(self, ver, url):
         ok = messagebox.askyesno("업데이트", f"v{ver}으로 업데이트할까요?\n\n내려받아 파일을 교체하고 위젯이 3초 뒤 자동으로 다시 켜집니다.\n설정과 위치는 그대로 유지됩니다.", parent=self)
         if ok:
@@ -1243,6 +1302,8 @@ class Widget(tk.Tk):
 
     def _restart_after_update(self, ver):
         log.info("updated to v%s, restarting", ver)
+        self.state["updated_from"] = VERSION      # 다음 시작 때 변경 내용을 보여주기 위해
+        self._save_state()
         # 콘솔 없는 프로세스에서 cmd/timeout은 신뢰할 수 없으므로, 파이썬 헬퍼가 3초 기다렸다가
         # (현재 프로세스가 끝나 뮤텍스가 풀린 뒤) 새 버전을 띄운다.
         exe = Path(sys.executable)
@@ -1602,8 +1663,8 @@ class Widget(tk.Tk):
         d.ellipse(inner, fill=CARD)
         if elapsed is not None and not stale:
             tw = TIME_RING_W * S
-            ring = (cx - R + w + tw, cy - R + w + tw, cx + R - w - tw, cy + R - w - tw)
-            d.arc(ring, -90, -90 + max(1, min(359.9, elapsed * 360)), fill=INK_SOFT, width=tw)
+            ring = inner   # 링 두께는 안쪽으로 들어가므로 bbox=inner면 가장자리에 붙음 (숫자와 간격 확보)
+            d.arc(ring, -90, -90 + max(1, min(359.9, elapsed * 360)), fill=C_STALE, width=tw)
         f = self.f_num_s if len(txt) >= 4 else self.f_num
         d.text((cx, cy), txt, font=f, fill=INK_SOFT if stale else INK, anchor="mm")
 
@@ -1694,13 +1755,15 @@ class Widget(tk.Tk):
             d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill)
         bounce = 0 if sleeping else [0, -1, -2, -1][fi]
         wag = 0 if sleeping else [0, 2, 0, -2][fi]
+        stride = 0 if sleeping else [0, 3, 0, -3][fi]   # 걸음: 발이 앞뒤로
         if kind == "body":
             by = 18 + bounce
             E(11, by, 35, by + 15, body)
             d.arc(((6 + wag) * k, (by - 5) * k, (16 + wag) * k, (by + 6) * k), 150, 300, fill=mark, width=int(2.6 * k))  # 꼬리 위로 말림
             if not sleeping:
-                for px_ in (15, 21, 27):
-                    E(px_, by + 12, px_ + 5, by + 16, body)
+                for n, px_ in enumerate((15, 21, 27)):
+                    sx = stride if n % 2 == 0 else -stride
+                    E(px_ + sx, by + 13, px_ + sx + 5, by + 17, body)
             hx, hy, r = 22, 14 + bounce, 10
         else:
             hx, hy, r = 11, 14 + (0 if sleeping else bounce // 2), 10
@@ -1720,13 +1783,16 @@ class Widget(tk.Tk):
             d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill)
         bounce = 0 if sleeping else [0, -2, -3, -1][fi]
         tilt = 0 if sleeping else [0, 1, 0, -1][fi]
+        stride = 0 if sleeping else [0, 3, 0, -3][fi]   # 걸음: 발이 앞뒤로
+
         if kind == "body":
             by = 20 + bounce
             E(12, by, 34, by + 14, body)
             E(7, by + 5, 13, by + 11, "#ffffff")                    # 꼬리 솜
             if not sleeping:
-                for px_ in (15, 21, 27):
-                    E(px_, by + 11, px_ + 5, by + 15, body)
+                for n, px_ in enumerate((15, 21, 27)):
+                    sx = stride if n % 2 == 0 else -stride
+                    E(px_ + sx, by + 12, px_ + sx + 5, by + 16, body)
             hx, hy, r, el = 23, 20 + bounce, 9, 11
         else:
             hx, hy, r, el = 11, 17 + (0 if sleeping else bounce // 2), 8, 9
@@ -1775,6 +1841,7 @@ class Widget(tk.Tk):
         face_c = "#e9dcd3" if eye else dark     # 검은 고양이는 코·입을 밝게
         bounce = 0 if sleeping else [0, -1, -2, -1][fi]
         wag = 0 if sleeping else [0, 1, 0, -1][fi]
+        stride = 0 if sleeping else [0, 3, 0, -3][fi]   # 걸음: 발이 앞뒤로
 
         def E(x0, y0, x1, y1, fill, outline=None, width=0):
             d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill, outline=outline, width=int(width * k))
@@ -1785,8 +1852,9 @@ class Widget(tk.Tk):
             E(11, by, 35, by + 15, body)                                           # 몸
             d.arc(((2 - wag) * k, (by - 6) * k, (16 - wag) * k, (by + 10) * k), 180, 330, fill=mark, width=int(2.4 * k))  # 꼬리
             if not sleeping:                                                       # 발
-                for px_ in (15, 21, 27):
-                    E(px_, by + 12, px_ + 5, by + 16, body)
+                for n, px_ in enumerate((15, 21, 27)):
+                    sx = stride if n % 2 == 0 else -stride
+                    E(px_ + sx, by + 13, px_ + sx + 5, by + 17, body)
             hx, hy = 22, 14 + bounce                                              # 머리 중심
             r = 10
         else:
