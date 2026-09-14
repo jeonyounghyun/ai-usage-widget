@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -92,19 +92,44 @@ STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Men
 STARTUP_BAT = STARTUP_DIR / "ai-usage-widget.bat"
 FONT_DIR = Path("C:/Windows/Fonts")
 
-# 팔레트 (파스텔)
+# 팔레트 (파스텔). 테마에 따라 apply_theme()가 아래 전역을 바꿔 끼운다.
 CHROMA = "#8c8c8c"        # 투명 처리용 키 색 (둥근 모서리 바깥)
-CARD = "#fff8f1"
-CARD_EDGE = "#f0e1d2"
-INK = "#4a3f3a"
-INK_SOFT = "#a3928a"
-TRACK = "#f2e7dd"
-C_OK, C_WARN, C_BAD, C_STALE = "#7fd1a8", "#f8c66d", "#f58c8c", "#d9cfc7"
+THEMES = {
+    #         카드,       테두리,    글자,      연한 글자,  트랙,      오래된 값,  버튼,      GPT 강조색, 메뉴 강조
+    "light": ("#fff8f1", "#f0e1d2", "#4a3f3a", "#a3928a", "#f2e7dd", "#d9cfc7", "#f6eadf", "#4a4a4a", "#ffe9d6"),
+    "dark":  ("#2b2826", "#3e3835", "#f1e9e2", "#a59a92", "#3f3936", "#6b625d", "#3a3431", "#e6e2dc", "#4a423e"),
+}
+CARD = CARD_EDGE = INK = INK_SOFT = TRACK = C_STALE = BTN_BG = MENU_HL = ""
+C_OK, C_WARN, C_BAD = "#7fd1a8", "#f8c66d", "#f58c8c"
 PROVIDERS_ALL = [
     # key, 표시명, 강조색, 고양이 몸색, 고양이 무늬색
     ("claude", "Claude", "#f28c6b", "#f4a460", "#d98a3f"),
     ("codex", "GPT", "#4a4a4a", "#d3cfc9", "#7d7d7d"),   # OpenAI 브랜드(흑백)에 맞춰 차콜 + 연회색 고양이
 ]
+THEME_NOW = "light"
+
+
+def windows_is_dark():
+    """Windows 앱 테마가 어두운지 (설정 → 개인 설정 → 색)."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+            return winreg.QueryValueEx(k, "AppsUseLightTheme")[0] == 0
+    except OSError:
+        return False
+
+
+def apply_theme(name):
+    """'light' / 'dark' 팔레트를 전역에 적용. 바뀌었으면 True."""
+    global CARD, CARD_EDGE, INK, INK_SOFT, TRACK, C_STALE, BTN_BG, MENU_HL, THEME_NOW
+    changed = name != THEME_NOW
+    CARD, CARD_EDGE, INK, INK_SOFT, TRACK, C_STALE, BTN_BG, gpt_accent, MENU_HL = THEMES[name]
+    PROVIDERS_ALL[1] = ("codex", "GPT", gpt_accent, "#d3cfc9", "#7d7d7d")
+    THEME_NOW = name
+    return changed
+
+
+apply_theme("light")
 PROVIDERS = list(PROVIDERS_ALL)   # 현재 표시 중인 제공자 (apply_layout이 갱신)
 WINDOWS = [("primary", "5시간"), ("secondary", "7일")]
 
@@ -116,6 +141,10 @@ W, H = 4 + SEC_W * 2, 126
 RADIUS = 16
 MINI_W, MINI_H = MINI_SEC_W * 2, 40   # 작업표시줄 미니 모드 크기 (라벨 1줄 + 퍼센트 1줄)
 MINI_NUM_Y = 26                       # 미니 모드 퍼센트 줄의 세로 중심
+
+
+def resolve_theme(setting):
+    return ("dark" if windows_is_dark() else "light") if setting == "auto" else setting
 
 
 def apply_layout(show_claude=True, show_gpt=True):
@@ -130,6 +159,10 @@ def apply_layout(show_claude=True, show_gpt=True):
     MINI_W = MINI_SEC_W * n
 GAUGE = 56
 RING_W = 7
+TIME_RING_W = 2            # 도넛 안쪽 '시간 경과' 얇은 링
+IDLE_REST_SEC = 10 * 60    # 사용률이 이만큼 안 오르면 캐릭터가 서서 쉼
+IDLE_SLEEP_SEC = 30 * 60   # 이만큼 안 오르면 잠
+STRETCH_SEC = 20           # 리셋 직후 기지개 시간
 
 # ---------------------------------------------------------------- 픽셀 고양이 (18x12, 옆모습 달리기)
 # b=몸, s=무늬, e=눈, p=귀 안쪽, m=입, '-'=감은 눈
@@ -177,7 +210,7 @@ CAT_PX_MINI = 2
 TIPS = {
     "title": "{name} 사용량. 색: 초록 50% 미만 · 노랑 50~80% · 빨강 80% 이상",
     "title_codex": "GPT 사용량 = Codex·ChatGPT Work 에이전트 한도 (일반 채팅은 한도가 없어 해당 없음). 색: 초록 <50% · 노랑 50~80% · 빨강 80%+",
-    "primary": "5시간 창: 최근 5시간 동안 쓴 비율. 100%가 되면 표시된 시각에 0%로 리셋",
+    "primary": "5시간 창: 최근 5시간 동안 쓴 비율. 100%가 되면 표시된 시각에 0%로 리셋\n안쪽 얇은 회색 링 = 창의 시간이 얼마나 지났는지 (사용률보다 앞서 있으면 여유)",
     "secondary": "7일 창: 최근 7일 동안 쓴 비율. 5시간 창과 별도로 계산",
     "fable": "Fable 모델 전용 주간 한도. 7일 전체 한도보다 먼저 차는 경우가 많음",
     "pace": "소진 예측: 지금 속도면 리셋 전에 한도가 남을지(여유), 모자랄지(부족 예상)",
@@ -210,6 +243,19 @@ def pct_color(p):
     if p >= 50:
         return C_WARN
     return C_OK
+
+
+def window_elapsed(win):
+    """창(5시간/7일)에서 시간이 얼마나 지났는지 0~1. 리셋 시각이나 창 길이를 모르면 None."""
+    try:
+        ra, mins = win.get("resets_at"), win.get("window_minutes")
+        if not ra or not mins:
+            return None
+        t = datetime.fromisoformat(ra.replace("Z", "+00:00"))
+        remain = (t - datetime.now(timezone.utc)).total_seconds() / 60
+        return max(0.0, min(1.0, 1 - remain / mins))
+    except (ValueError, TypeError):
+        return None
 
 
 def fmt_remaining(resets_at, pct=None):
@@ -522,6 +568,7 @@ def clamp_to_screen(x, y):
 
 # ---------------------------------------------------------------- 알림 팝업 (위젯과 같은 디자인)
 POP_W, POP_H, POP_SEC = 370, 96, 8
+DIM_ALPHA = 0.45          # '마우스를 올릴 때만 선명하게' 모드의 평소 투명도
 _popups = []   # 떠 있는 팝업 (아래에서부터 쌓기)
 
 
@@ -642,6 +689,9 @@ class Widget(tk.Tk):
         self._hidden = False
         self.mini = bool(self.state.get("mini", False))
         self._anim = {k: {"frame": 0, "next": 0.0} for k, *_ in PROVIDERS_ALL}
+        self._hist = {k: [] for k, *_ in PROVIDERS_ALL}        # (time, 5h%) 최근 기록 → 소진 속도
+        self._last_rise = {k: time.time() for k, *_ in PROVIDERS_ALL}   # 마지막으로 사용률이 오른 시각
+        self._stretch_until = {k: 0.0 for k, *_ in PROVIDERS_ALL}       # 리셋 직후 기지개 종료 시각
         apply_layout(self.state.get("show_claude", True), self.state.get("show_gpt", True))
         self._buttons = {}
 
@@ -659,7 +709,9 @@ class Widget(tk.Tk):
         self.configure(bg=CHROMA)
         self.attributes("-transparentcolor", CHROMA)
         self.attributes("-topmost", self.state.get("topmost", True))
-        self.attributes("-alpha", self.state.get("alpha", 1.0))
+        self._hover = False
+        apply_theme(resolve_theme(self.state.get("theme", "auto")))
+        self._apply_alpha()
         x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
         self.geometry(f"{W}x{H}+{x}+{y}")
 
@@ -671,7 +723,8 @@ class Widget(tk.Tk):
         self.canvas.bind("<ButtonRelease-1>", self._release)
         self.canvas.bind("<Button-3>", self._popup_menu)
         self.canvas.bind("<Motion>", self._motion)
-        self.canvas.bind("<Leave>", lambda _e: self._tip_hide())
+        self.canvas.bind("<Leave>", self._leave)
+        self.canvas.bind("<Enter>", self._enter)
         self.canvas.bind("<ButtonPress>", lambda _e: self._tip_hide(), add="+")
 
         self._build_menu()
@@ -695,7 +748,7 @@ class Widget(tk.Tk):
 
     # ------------------------------------------------------------ 메뉴
     def _build_menu(self):
-        kw = dict(tearoff=0, bg=CARD, fg=INK, activebackground="#ffe9d6", activeforeground=INK)
+        kw = dict(tearoff=0, bg=CARD, fg=INK, activebackground=MENU_HL, activeforeground=INK)
         self.menu = tk.Menu(self, **kw)
         self.menu.add_command(label="지금 새로고침", command=self.refresh)
         char_menu = tk.Menu(self.menu, **kw)
@@ -716,6 +769,13 @@ class Widget(tk.Tk):
         for label, v in (("100%", 1.0), ("85%", 0.85), ("70%", 0.7), ("55%", 0.55)):
             alpha_menu.add_radiobutton(label=label, value=v, variable=self.alpha_var, command=self._set_alpha)
         self.menu.add_cascade(label="투명도", menu=alpha_menu)
+        theme_menu = tk.Menu(self.menu, **kw)
+        self.theme_var = tk.StringVar(value=self.state.get("theme", "auto"))
+        for v, label in (("auto", "자동 (Windows 설정 따라감)"), ("light", "밝게"), ("dark", "어둡게")):
+            theme_menu.add_radiobutton(label=label, value=v, variable=self.theme_var, command=self._set_theme)
+        self.menu.add_cascade(label="테마", menu=theme_menu)
+        self.dim_var = tk.BooleanVar(value=self.state.get("hover_dim", False))
+        self.menu.add_checkbutton(label="마우스를 올릴 때만 선명하게 (평소 흐림)", variable=self.dim_var, command=self._set_dim)
 
         self.pace_var = tk.BooleanVar(value=self.state.get("pace", False))
         self.menu.add_checkbutton(label="소진 예측 표시 (리셋 전에 모자랄지)", variable=self.pace_var,
@@ -870,7 +930,7 @@ class Widget(tk.Tk):
         w = tk.Toplevel(self)
         w.overrideredirect(True)
         w.attributes("-topmost", True)
-        lbl = tk.Label(w, text=text, bg="#fffdf9", fg=INK, font=("Malgun Gothic", 9), justify="left",
+        lbl = tk.Label(w, text=text, bg=CARD, fg=INK, font=("Malgun Gothic", 9), justify="left",
                        wraplength=320, padx=10, pady=6, relief="solid", bd=1, highlightthickness=0)
         lbl.configure(highlightbackground=CARD_EDGE)
         lbl.pack()
@@ -886,8 +946,31 @@ class Widget(tk.Tk):
 
     def _set_alpha(self):
         v = self.alpha_var.get()
-        self.attributes("-alpha", v)
         self._set("alpha", v)
+        self._apply_alpha()
+
+    def _set_dim(self):
+        self._set("hover_dim", self.dim_var.get())
+        self._apply_alpha()
+
+    def _apply_alpha(self):
+        """투명도 = 사용자 설정값. '흐리게' 모드면 마우스가 위에 없을 때 더 흐리게."""
+        a = float(self.state.get("alpha", 1.0))
+        if self.state.get("hover_dim", False) and not self._hover:
+            a = min(a, DIM_ALPHA)
+        self.attributes("-alpha", a)
+
+    def _set_theme(self):
+        self._set("theme", self.theme_var.get())
+        self._refresh_theme()
+
+    def _refresh_theme(self):
+        """설정(auto/light/dark)에 맞는 팔레트를 적용하고 바뀌었으면 다시 그린다."""
+        if apply_theme(resolve_theme(self.state.get("theme", "auto"))):
+            apply_layout(self.state.get("show_claude", True), self.state.get("show_gpt", True))
+            self._build_menu()
+            self._base_key = None
+            self._last_frame_key = None
 
     def _toggle_topmost(self):
         v = self.topmost_var.get()
@@ -966,6 +1049,25 @@ class Widget(tk.Tk):
         elif hit == "refresh":
             self.refresh()
 
+    def _enter(self, _e=None):
+        self._hover = True
+        self._apply_alpha()
+
+    def _leave(self, _e=None):
+        self._tip_hide()
+        # 툴팁/메뉴로 잠깐 나갔다 오는 경우가 있어 실제 커서 위치로 판단
+        self.after(150, self._check_hover)
+
+    def _check_hover(self):
+        try:
+            x, y = self.winfo_pointerxy()
+            inside = self.winfo_x() <= x < self.winfo_x() + self.winfo_width() and self.winfo_y() <= y < self.winfo_y() + self.winfo_height()
+        except tk.TclError:
+            return
+        if inside != self._hover:
+            self._hover = inside
+            self._apply_alpha()
+
     def _popup_menu(self, e):
         self.menu.tk_popup(e.x_root, e.y_root)
 
@@ -1011,6 +1113,7 @@ class Widget(tk.Tk):
         self._fetching = False
         if data:
             self._check_alerts(data)
+            self._track_rate(data)
             self.usage.update(data)
             self.last_ok = datetime.now()
             self.error = None
@@ -1026,6 +1129,45 @@ class Widget(tk.Tk):
         for prov, msg in self.errors.items():
             log.info("provider %s: %s", prov, msg[:160])
         self._schedule_next(ok=not (self.errors or self.error))
+
+    def _track_rate(self, data):
+        """5시간 사용률 기록 → 캐릭터 걷는 속도(소진 속도)와 쉬기/잠자기 판정에 사용."""
+        now = time.time()
+        for prov, u in data.items():
+            pct = (u.get("primary") or {}).get("used_percent")
+            if pct is None or prov not in self._hist:
+                continue
+            h = self._hist[prov]
+            if h and pct > h[-1][1] + 0.4:
+                self._last_rise[prov] = now
+            h.append((now, pct))
+            del h[:-40]
+
+    def _burn_rate(self, prov):
+        """최근 10분 기준 %/분 (리셋으로 줄어든 구간은 0 취급)."""
+        h = self._hist.get(prov) or []
+        if len(h) < 2:
+            return 0.0
+        now, last = h[-1]
+        base = next((v for t, v in h if now - t <= 600), h[-1][1])
+        span = max(60.0, now - next((t for t, v in h if now - t <= 600), now))
+        return max(0.0, (last - base) / (span / 60))
+
+    def _pose(self, prov):
+        """walk(걷기) / idle(서서 쉬기) / sleep(잠) / down(100% 드러눕기) / stretch(리셋 기지개)"""
+        pct = ((self.usage.get(prov) or {}).get("primary") or {}).get("used_percent")
+        if pct is None:
+            return "sleep"
+        if pct >= 100:
+            return "down"
+        if time.time() < self._stretch_until.get(prov, 0):
+            return "stretch"
+        idle = time.time() - self._last_rise.get(prov, 0)
+        if idle > IDLE_SLEEP_SEC:
+            return "sleep"
+        if idle > IDLE_REST_SEC:
+            return "idle"
+        return "walk"
 
     def _check_alerts(self, data):
         """80% 돌파 / 100% 도달 / 리셋을 감지해 배너를 띄운다."""
@@ -1045,6 +1187,8 @@ class Widget(tk.Tk):
                 # 사용률은 창 안에서 줄지 않으므로, 줄었으면 리셋. (Claude는 리셋 후 resets_at이 None이라 시각 비교로는 못 잡음)
                 # 알림 피로를 줄이기 위해 80% 경고와 리셋은 5시간 창만, 100% 소진은 두 창 모두.
                 if pct < prev_pct - 0.5 and wkey == "primary":
+                    self._stretch_until[prov] = time.time() + STRETCH_SEC
+                    self._last_rise[prov] = time.time()
                     self._alert(f"{label} 한도가 리셋됐어요 ({int(pct)}%)", C_OK, prov, sound=True)
                 elif prev_pct < 100 <= pct:
                     self._alert(f"{label} 한도 소진 · {fmt_remaining(reset)} 리셋", C_BAD, prov, sound=True)
@@ -1150,6 +1294,10 @@ class Widget(tk.Tk):
                     self.check_update()
                 if self.mini and not self._hidden and not self._drag:
                     self._apply_geometry()
+                if self._ticks % 100 == 0 and self.state.get("theme", "auto") == "auto":
+                    self._refresh_theme()
+                if self.state.get("hover_dim", False):
+                    self._check_hover()
             if self.banner and time.monotonic() > self.banner[2]:
                 self.banner = None
             self._advance_cats()
@@ -1200,13 +1348,19 @@ class Widget(tk.Tk):
             self.attributes("-topmost", self.state.get("topmost", True))
 
     def _advance_cats(self):
+        """걷는 속도 = 소진 속도. 0%/분: 느긋(0.5s/프레임) … 2%/분 이상: 전력(0.08s)."""
         now = time.monotonic()
         for key, *_ in PROVIDERS:
-            pct = ((self.usage.get(key) or {}).get("primary") or {}).get("used_percent")
             a = self._anim[key]
-            if pct is None or pct >= 100:
+            pose = self._pose(key)
+            if pose == "stretch":
+                a["frame"] = int(now * 2) % 2          # 0.5초마다 쭉-움츠림
                 continue
-            interval = max(0.07, 0.42 - pct * 0.0035)   # 0%: 0.42s, 100%: 0.07s
+            if pose != "walk":
+                a["frame"] = 0
+                continue
+            rate = min(2.0, self._burn_rate(key))
+            interval = 0.5 - rate * 0.21
             if now >= a["next"]:
                 a["frame"] = (a["frame"] + 1) % len(CAT_LEGS)
                 a["next"] = now + interval
@@ -1266,7 +1420,7 @@ class Widget(tk.Tk):
             fb = extra_window(u, "fable")
             parts.append((fb.get("used_percent"), u.get("login_method"), self._is_stale(key)))
         parts.append(self._status()[:2])
-        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), getattr(self, "_ct_now", False), self.char))
+        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), getattr(self, "_ct_now", False), self.char, THEME_NOW))
         return tuple(parts)
 
     def draw(self):
@@ -1275,7 +1429,7 @@ class Widget(tk.Tk):
             self._base = self._render_mini() if self.mini else self._render_base()
             self._base_key = key
         # 고양이 프레임/z 위치가 안 바뀌었으면 화면 갱신 생략 (CPU 절약)
-        cat_key = tuple((k, self._anim[k]["frame"], (self._ticks // 6) % 3) for k, *_ in PROVIDERS)
+        cat_key = tuple((k, self._anim[k]["frame"], (self._ticks // 6) % 3, self._pose(k)) for k, *_ in PROVIDERS)
         frame_key = (key, cat_key)
         if frame_key == self._last_frame_key:
             return
@@ -1283,14 +1437,13 @@ class Widget(tk.Tk):
 
         out = self._base.copy()
         for i, (pkey, name, accent, body, mark) in enumerate(PROVIDERS):
-            pct5 = ((self.usage.get(pkey) or {}).get("primary") or {}).get("used_percent")
-            sleeping = pct5 is None or pct5 >= 100
+            pose = self._pose(pkey)
             fi = self._anim[pkey]["frame"]
             if self.mini:
-                self._char(out, 8 + i * MINI_SEC_W, 8, fi, pkey, body, mark, sleeping, kind="head", scale=1.0)
+                self._char(out, 8 + i * MINI_SEC_W, 8, fi, pkey, body, mark, pose, kind="head", scale=1.0)
             else:
                 ox = 10 + i * SEC_W
-                self._char(out, ox - 2, 8, fi, pkey, body, mark, sleeping, kind="body", scale=0.85)
+                self._char(out, ox - 2, 8, fi, pkey, body, mark, pose, kind="body", scale=0.85)
         if os.environ.get("WIDGET_SNAP"):
             out.save(os.environ["WIDGET_SNAP"])
         self._photo = ImageTk.PhotoImage(out)
@@ -1317,6 +1470,9 @@ class Widget(tk.Tk):
             t7 = "–" if p7 is None else f"{int(round(p7))}%"
             x = ox + (30 if self.char != "none" else 4)
             d.text((x * S, 4 * S), name, font=self.f_tiny, fill=accent)           # 서비스 라벨 (윗줄)
+            worst = max([v for v in (p5, p7) if v is not None], default=None)     # 상태 점: 5h/7d 중 나쁜 쪽 색
+            dx = x + d.textlength(name, font=self.f_tiny) / S + 4
+            d.ellipse(((dx) * S, 8 * S, (dx + 5) * S, 13 * S), fill=C_STALE if (stale or worst is None) else pct_color(worst))
             d.text((x * S, (MINI_NUM_Y + 1) * S), "5h", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
             x += d.textlength("5h", font=self.f_tiny) / S + 2
             d.text((x * S, MINI_NUM_Y * S), t5, font=self.f_num,
@@ -1372,7 +1528,7 @@ class Widget(tk.Tk):
             for j, (wkey, wname) in enumerate(WINDOWS):
                 win = u.get(wkey) or {}
                 gx, gy = ox + j * 138, 62
-                self._gauge(d, gx, gy, win.get("used_percent"), stale)
+                self._gauge(d, gx, gy, win.get("used_percent"), stale, elapsed=window_elapsed(win))
                 tips.append((gx, gy, gx + GAUGE + 100, gy + 40, TIPS[wkey]))
                 d.text(((gx + GAUGE + 6) * S, (gy + 9) * S), wname, font=self.f_small, fill=INK)
                 d.text(((gx + GAUGE + 6) * S, (gy + 27) * S), fmt_remaining(win.get("resets_at"), win.get("used_percent")),
@@ -1407,7 +1563,7 @@ class Widget(tk.Tk):
         # 버튼 (↻, ✕)
         for label, bx in (("refresh", W - 38), ("close", W - 18)):
             r, cx, cy = 7, bx, 14
-            d.ellipse(((cx - r) * S, (cy - r) * S, (cx + r) * S, (cy + r) * S), fill="#f6eadf")
+            d.ellipse(((cx - r) * S, (cy - r) * S, (cx + r) * S, (cy + r) * S), fill=BTN_BG)
             if label == "refresh":
                 d.text((cx * S, cy * S), "↻", font=self.f_btn, fill=INK_SOFT, anchor="mm")
             else:
@@ -1422,7 +1578,8 @@ class Widget(tk.Tk):
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, W - 1, H - 1), radius=RADIUS, fill=255)
         return Image.composite(out, Image.new("RGB", (W, H), CHROMA), mask)
 
-    def _gauge(self, d, x, y, pct, stale):
+    def _gauge(self, d, x, y, pct, stale, elapsed=None):
+        """도넛. elapsed(0~1)가 있으면 안쪽에 얇은 '시간 경과' 링을 그린다 (사용률보다 시간이 많이 지났으면 여유)."""
         S = SS
         R = GAUGE * S / 2
         w = RING_W * S
@@ -1443,14 +1600,20 @@ class Widget(tk.Tk):
         else:
             txt = "–"
         d.ellipse(inner, fill=CARD)
+        if elapsed is not None and not stale:
+            tw = TIME_RING_W * S
+            ring = (cx - R + w + tw, cy - R + w + tw, cx + R - w - tw, cy + R - w - tw)
+            d.arc(ring, -90, -90 + max(1, min(359.9, elapsed * 360)), fill=INK_SOFT, width=tw)
         f = self.f_num_s if len(txt) >= 4 else self.f_num
         d.text((cx, cy), txt, font=f, fill=INK_SOFT if stale else INK, anchor="mm")
 
-    def _char(self, img, x, y, fi, prov, body, mark, sleeping, kind="body", scale=1.0):
-        """캐릭터 스타일에 따라 img(PIL RGB)에 캐릭터를 그린다. kind: body(전신) / head(얼굴)."""
+    def _char(self, img, x, y, fi, prov, body, mark, pose, kind="body", scale=1.0):
+        """캐릭터 스타일에 따라 img(PIL RGB)에 캐릭터를 그린다. kind: body(전신) / head(얼굴).
+        pose: walk / idle / sleep(눈 감고 z) / down(100%: 눈 감고 드러누움) / stretch(리셋: 위아래로 쭉)"""
         style = self.char
         if style == "none":
             return
+        sleeping = pose in ("sleep", "down")
         if style == "pixel":
             d = ImageDraw.Draw(img)
             if kind == "head":
@@ -1468,8 +1631,16 @@ class Widget(tk.Tk):
         else:
             sprite = self._smooth_cat(fi, sb, sm, blush, sleeping, kind, scale, patches=(style == "calico"),
                                       eye="#ffd76a" if style == "black" else None)
+        if pose == "down":       # 한도 소진: 옆으로 드러눕기
+            sprite = sprite.rotate(90, expand=True, resample=Image.BICUBIC)
+            y = y + (sprite.height - sprite.width) // 2 if kind == "head" else y + 4
+        elif pose == "stretch":  # 리셋: 기지개 (위로 쭉)
+            if fi == 1:
+                nh = int(sprite.height * 1.18)
+                sprite = sprite.resize((sprite.width, nh), Image.LANCZOS)
+                y -= nh - int(nh / 1.18)
         img.paste(sprite, (x, y), sprite)
-        if sleeping:
+        if pose == "sleep":
             d = ImageDraw.Draw(img)
             phase = (self._ticks // 6) % 3
             zx = x + sprite.width - 10 if kind == "body" else x + sprite.width // 2
