@@ -1,4 +1,4 @@
-﻿"""
+"""
 AI Usage Widget - Claude / GPT(Codex) 사용량 한도를 화면에 항상 표시하는 파스텔 카드 위젯.
 RunCat처럼 픽셀 고양이가 달리며, 5시간 한도를 많이 쓸수록 빨리 달리고 100%면 잠든다.
 
@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.5.7"
+VERSION = "1.5.8"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -402,9 +402,12 @@ def foreground_is_fullscreen(own_hwnd):
 
 
 def desktop_is_foreground(own_hwnd):
+    """전경이 바탕화면이면 True. 위젯 자신이 전경이어도 False → 클릭 통과를 켠 직후(메뉴 닫힌 뒤)부터 바로 통과."""
     h = _user32.GetForegroundWindow()
-    if not h or h == own_hwnd:
+    if not h:
         return True
+    if h == own_hwnd:
+        return False
     cls = ctypes.create_unicode_buffer(64)
     _user32.GetClassNameW(h, cls, 64)
     return cls.value in ("Progman", "WorkerW")
@@ -584,7 +587,7 @@ class Popup(tk.Toplevel):
 
     def _anim(self):
         try:
-            if time.monotonic() - self._t0 > self.seconds:
+            if self.seconds is not None and time.monotonic() - self._t0 > self.seconds:
                 self.close(); return
             self._frame = (self._frame + 1) % len(CAT_LEGS)
             self._photo = ImageTk.PhotoImage(self._render())
@@ -756,9 +759,9 @@ class Widget(tk.Tk):
         if self.ct_var.get():
             ok = messagebox.askokcancel(
                 "클릭 통과 모드",
-                "켜면 다른 창이 활성일 때 마우스가 위젯을 통과합니다 (위젯을 클릭할 수 없음).\n\n"
-                "위젯을 다시 조작하려면 바탕화면을 클릭하거나 Ctrl 키를 누른 채로 클릭하세요.\n"
-                "끄려면 그 상태에서 우클릭 → 클릭 통과 모드 해제.",
+                "켜면 마우스가 위젯을 통과해 아래 창을 조작합니다 (위젯을 클릭할 수 없음).\n\n"
+                "위젯을 조작하려면: Ctrl 키를 누른 채로 클릭/우클릭, 또는 바탕화면을 먼저 클릭.\n"
+                "끄려면: Ctrl 누른 채 우클릭 → 클릭 통과 모드 해제.",
                 parent=self)
             if not ok:
                 self.ct_var.set(False)
@@ -1064,8 +1067,12 @@ class Widget(tk.Tk):
             return
         ver, url = found
         log.info("update available: v%s", ver)
-        Popup(self, f"새 버전 v{ver} 있어요 · 클릭하면 안내 창이 떠요", C_OK, None,
-              on_click=lambda: self._confirm_update(ver, url), seconds=60)
+        pend = getattr(self, "_pending_update", None)
+        if pend and pend[0] == ver and pend[2].winfo_exists():
+            return  # 이미 같은 버전 알림이 떠 있음
+        pop = Popup(self, f"새 버전 v{ver} 있어요 · 클릭하면 안내 창이 떠요", C_OK, None,
+                    on_click=lambda: self._confirm_update(ver, url), seconds=None)
+        self._pending_update = (ver, url, pop)
 
     def _confirm_update(self, ver, url):
         ok = messagebox.askyesno("업데이트", f"v{ver}으로 업데이트할까요?\n\n내려받아 파일을 교체하고 위젯이 3초 뒤 자동으로 다시 켜집니다.\n설정과 위치는 그대로 유지됩니다.", parent=self)
