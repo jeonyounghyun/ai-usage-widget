@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.5.8"
+VERSION = "1.6.0"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -186,12 +186,18 @@ TIPS = {
 }
 
 # 캐릭터 스타일: "smooth"(부드러운 벡터 고양이, 기본) / "pixel"(도트) / "none"
-CHAR_STYLES = [("smooth", "부드러운 고양이"), ("pixel", "도트 고양이"), ("none", "없음")]
+CHAR_STYLES = [("smooth", "부드러운 고양이"), ("black", "검은 고양이"), ("calico", "삼색 고양이"),
+               ("dog", "강아지"), ("rabbit", "토끼"), ("blob", "젤리"),
+               ("pixel", "도트 고양이"), ("none", "없음")]
 CHAR_DEFAULT = "smooth"
-# 부드러운 고양이 색 (몸, 무늬, 볼터치) - GPT는 브랜드 민트 계열로
+# 부드러운 캐릭터 색 (몸, 무늬, 볼터치) - Claude는 주황 계열, GPT는 흑백 계열
 SMOOTH_COLORS = {
-    "claude": ("#f6b27a", "#e08c4a", "#ffb7c5"),
-    "codex": ("#d9d5cf", "#7d7d7d", "#ffc9d4"),
+    "smooth": {"claude": ("#f6b27a", "#e08c4a", "#ffb7c5"), "codex": ("#d9d5cf", "#7d7d7d", "#ffc9d4")},
+    "black":  {"claude": ("#4a4240", "#2b2523", "#f29ab0"), "codex": ("#3d3d3d", "#1f1f1f", "#f0a4b8")},
+    "calico": {"claude": ("#fff4e6", "#e08c4a", "#ffb7c5"), "codex": ("#f4f1ec", "#5a5a5a", "#ffc9d4")},
+    "dog":    {"claude": ("#f3c68f", "#c98a4a", "#ffb7c5"), "codex": ("#e6e2dc", "#6f6f6f", "#ffc9d4")},
+    "rabbit": {"claude": ("#fbe3cf", "#f2a37c", "#ffb7c5"), "codex": ("#efece8", "#8a8a8a", "#ffc9d4")},
+    "blob":   {"claude": ("#f6a986", "#e07d58", "#ffd1c2"), "codex": ("#c9c5bf", "#7d7d7d", "#eadfd8")},
 }
 
 
@@ -1452,8 +1458,16 @@ class Widget(tk.Tk):
             else:
                 self._cat(d, x, y + 2, fi, body, mark, sleeping, px=max(1, int(round(CAT_PX * scale))))
             return
-        sb, sm, blush = SMOOTH_COLORS.get(prov, (body, mark, "#ffb7c5"))
-        sprite = self._smooth_cat(fi, sb, sm, blush, sleeping, kind, scale)
+        sb, sm, blush = SMOOTH_COLORS.get(style, SMOOTH_COLORS["smooth"]).get(prov, (body, mark, "#ffb7c5"))
+        if style == "dog":
+            sprite = self._smooth_dog(fi, sb, sm, blush, sleeping, kind, scale)
+        elif style == "rabbit":
+            sprite = self._smooth_rabbit(fi, sb, sm, blush, sleeping, kind, scale)
+        elif style == "blob":
+            sprite = self._smooth_blob(fi, sb, sm, blush, sleeping, kind, scale)
+        else:
+            sprite = self._smooth_cat(fi, sb, sm, blush, sleeping, kind, scale, patches=(style == "calico"),
+                                      eye="#ffd76a" if style == "black" else None)
         img.paste(sprite, (x, y), sprite)
         if sleeping:
             d = ImageDraw.Draw(img)
@@ -1461,8 +1475,122 @@ class Widget(tk.Tk):
             zx = x + sprite.width - 10 if kind == "body" else x + sprite.width // 2
             d.text((zx, y - 8 + phase * 2), "z", font=self.f_z, fill=INK_SOFT)
 
-    def _smooth_cat(self, fi, body, mark, blush, sleeping, kind, scale):
-        """둥근 도형으로 그린 고양이. 4배 슈퍼샘플링 후 축소해 매끈하게. RGBA 반환."""
+    @staticmethod
+    def _sprite_canvas(kind, scale):
+        """캐릭터 스프라이트 공통: (RGBA 캔버스, 그리기 객체, 논리px→렌더px 배율, 결과 크기)."""
+        U = 4
+        w, h = (int(22 * scale), int(24 * scale)) if kind == "head" else (int(44 * scale), int(34 * scale))
+        img = Image.new("RGBA", (w * U, h * U), (0, 0, 0, 0))
+        return img, ImageDraw.Draw(img), scale * U, (w, h)
+
+    def _face(self, d, k, hx, hy, r, mark, blush, sleeping, dark="#3a3230", nose="cat", whiskers=True):
+        """공통 얼굴: 볼터치·눈·코·입(·수염). hx,hy 머리 중심, r 반지름 (논리 px)."""
+        def E(x0, y0, x1, y1, fill):
+            d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill)
+        E(hx - 7, hy + 1.5, hx - 4, hy + 4, blush)
+        E(hx + 4, hy + 1.5, hx + 7, hy + 4, blush)
+        for ex in (hx - 3.5, hx + 3.5):
+            if sleeping:
+                d.arc(((ex - 1.8) * k, (hy - 2) * k, (ex + 1.8) * k, (hy + 1) * k), 20, 160, fill=dark, width=int(1.2 * k))
+            else:
+                E(ex - 1.3, hy - 1.6, ex + 1.3, hy + 1.0, dark)
+        if nose == "dog":
+            E(hx - 1.8, hy + 1.2, hx + 1.8, hy + 3.6, dark)
+            d.arc(((hx - 3) * k, (hy + 2.6) * k, hx * k, (hy + 5.6) * k), 0, 180, fill=dark, width=int(0.9 * k))
+            d.arc((hx * k, (hy + 2.6) * k, (hx + 3) * k, (hy + 5.6) * k), 0, 180, fill=dark, width=int(0.9 * k))
+            if not sleeping:
+                E(hx - 1.2, hy + 4.2, hx + 1.2, hy + 6.6, "#f08a9a")   # 혀
+        elif nose == "rabbit":
+            d.polygon([((hx - 1.2) * k, (hy + 1.8) * k), ((hx + 1.2) * k, (hy + 1.8) * k), (hx * k, (hy + 3.2) * k)], fill="#e58aa0")
+            d.line((hx * k, (hy + 3.2) * k, hx * k, (hy + 4.4) * k), fill=dark, width=int(0.8 * k))
+            d.arc(((hx - 2.6) * k, (hy + 3) * k, hx * k, (hy + 5.6) * k), 0, 180, fill=dark, width=int(0.8 * k))
+            d.arc((hx * k, (hy + 3) * k, (hx + 2.6) * k, (hy + 5.6) * k), 0, 180, fill=dark, width=int(0.8 * k))
+        elif nose == "blob":
+            d.arc(((hx - 2) * k, (hy + 1.5) * k, (hx + 2) * k, (hy + 4.5) * k), 10, 170, fill=dark, width=int(1.0 * k))
+        else:
+            d.polygon([((hx - 1) * k, (hy + 2) * k), ((hx + 1) * k, (hy + 2) * k), (hx * k, (hy + 3.2) * k)], fill=dark)
+            d.arc(((hx - 3) * k, (hy + 2) * k, hx * k, (hy + 5) * k), 0, 180, fill=dark, width=int(0.9 * k))
+            d.arc((hx * k, (hy + 2) * k, (hx + 3) * k, (hy + 5) * k), 0, 180, fill=dark, width=int(0.9 * k))
+        if whiskers:
+            for sgn in (-1, 1):
+                for dy in (-0.5, 1.5):
+                    d.line(((hx + sgn * 8) * k, (hy + 2 + dy) * k, (hx + sgn * 12) * k, (hy + 1.5 + dy * 1.6) * k), fill=mark, width=int(0.8 * k))
+
+    def _smooth_dog(self, fi, body, mark, blush, sleeping, kind, scale):
+        """강아지: 늘어진 귀, 주둥이 밝은 무늬, 짧은 꼬리 흔들기."""
+        img, d, k, size = self._sprite_canvas(kind, scale)
+        def E(x0, y0, x1, y1, fill):
+            d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill)
+        bounce = 0 if sleeping else [0, -1, -2, -1][fi]
+        wag = 0 if sleeping else [0, 2, 0, -2][fi]
+        if kind == "body":
+            by = 18 + bounce
+            E(11, by, 35, by + 15, body)
+            d.arc(((6 + wag) * k, (by - 5) * k, (16 + wag) * k, (by + 6) * k), 150, 300, fill=mark, width=int(2.6 * k))  # 꼬리 위로 말림
+            if not sleeping:
+                for px_ in (15, 21, 27):
+                    E(px_, by + 12, px_ + 5, by + 16, body)
+            hx, hy, r = 22, 14 + bounce, 10
+        else:
+            hx, hy, r = 11, 14 + (0 if sleeping else bounce // 2), 10
+        E(hx - r, hy - r, hx + r, hy + r, body)
+        for sgn in (-1, 1):  # 늘어진 귀
+            ex = hx + sgn * 8.5
+            E(ex - 3.2, hy - 7, ex + 3.2, hy + 5, mark)
+        E(hx - 4.5, hy + 0.5, hx + 4.5, hy + 6.5, "#fff3e6")   # 주둥이
+        E(hx - 3, hy - r + 0.5, hx + 3, hy - r + 5, mark)       # 이마 점무늬
+        self._face(d, k, hx, hy, r, mark, blush, sleeping, nose="dog", whiskers=False)
+        return img.resize(size, Image.LANCZOS)
+
+    def _smooth_rabbit(self, fi, body, mark, blush, sleeping, kind, scale):
+        """토끼: 긴 귀(걸을 때 살짝 흔들림), 동그란 꼬리 솜, 큰 점프."""
+        img, d, k, size = self._sprite_canvas(kind, scale)
+        def E(x0, y0, x1, y1, fill):
+            d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill)
+        bounce = 0 if sleeping else [0, -2, -3, -1][fi]
+        tilt = 0 if sleeping else [0, 1, 0, -1][fi]
+        if kind == "body":
+            by = 20 + bounce
+            E(12, by, 34, by + 14, body)
+            E(7, by + 5, 13, by + 11, "#ffffff")                    # 꼬리 솜
+            if not sleeping:
+                for px_ in (15, 21, 27):
+                    E(px_, by + 11, px_ + 5, by + 15, body)
+            hx, hy, r, el = 23, 20 + bounce, 9, 11
+        else:
+            hx, hy, r, el = 11, 17 + (0 if sleeping else bounce // 2), 8, 9
+        for sgn in (-1, 1):  # 귀 (캔버스 위 경계 안에서)
+            ex = hx + sgn * 4.5 + tilt * sgn * 0.5
+            top = max(0.5, hy - r - el)
+            d.ellipse(((ex - 2.6) * k, top * k, (ex + 2.6) * k, (hy - r + 3) * k), fill=body)
+            d.ellipse(((ex - 1.3) * k, (top + 2) * k, (ex + 1.3) * k, (hy - r + 1) * k), fill=blush)
+        E(hx - r, hy - r, hx + r, hy + r, body)
+        self._face(d, k, hx, hy, r, mark, blush, sleeping, nose="rabbit", whiskers=True)
+        return img.resize(size, Image.LANCZOS)
+
+    def _smooth_blob(self, fi, body, mark, blush, sleeping, kind, scale):
+        """젤리(슬라임): 출렁이는 둥근 덩어리, 하이라이트."""
+        img, d, k, size = self._sprite_canvas(kind, scale)
+        def E(x0, y0, x1, y1, fill):
+            d.ellipse((x0 * k, y0 * k, x1 * k, y1 * k), fill=fill)
+        sq = 0 if sleeping else [0, 1.5, 0, -1][fi]   # 눌림(넓어짐)
+        if kind == "body":
+            cx, top, bot = 22, 8 - sq * 0.6, 32
+            hw = 15 + sq
+            d.rounded_rectangle(((cx - hw) * k, top * k, (cx + hw) * k, bot * k), radius=int(13 * k), fill=body)
+            E(cx - hw, bot - 10, cx + hw, bot, body)
+            hx, hy = cx, 19 - sq * 0.3
+        else:
+            cx, top, bot, hw = 11, 3 - sq * 0.4, 23, 10 + sq * 0.6
+            d.rounded_rectangle(((cx - hw) * k, top * k, (cx + hw) * k, bot * k), radius=int(9 * k), fill=body)
+            hx, hy = cx, 14
+        E(hx - 8.5, hy - 9, hx - 3.5, hy - 5.5, "#ffffff")    # 하이라이트
+        E(hx + 5, hy + 5, hx + 8, hy + 7.5, mark)             # 작은 점
+        self._face(d, k, hx, hy, 9, mark, blush, sleeping, nose="blob", whiskers=False)
+        return img.resize(size, Image.LANCZOS)
+
+    def _smooth_cat(self, fi, body, mark, blush, sleeping, kind, scale, patches=False, eye=None):
+        """둥근 도형으로 그린 고양이. 4배 슈퍼샘플링 후 축소해 매끈하게. RGBA 반환. patches: 삼색 무늬."""
         U = 4
         if kind == "head":
             w, h = int(22 * scale), int(24 * scale)
@@ -1472,6 +1600,8 @@ class Widget(tk.Tk):
         d = ImageDraw.Draw(img)
         k = scale * U               # 논리 px -> 렌더 px
         dark = "#3a3230"
+        eye_c = eye or dark
+        face_c = "#e9dcd3" if eye else dark     # 검은 고양이는 코·입을 밝게
         bounce = 0 if sleeping else [0, -1, -2, -1][fi]
         wag = 0 if sleeping else [0, 1, 0, -1][fi]
 
@@ -1498,6 +1628,14 @@ class Widget(tk.Tk):
             d.polygon([((ex - 2) * k, (hy - 6) * k), ((ex + sgn * 1) * k, (hy - 10.5) * k), ((ex + 2) * k, (hy - 6) * k)], fill=blush)
         # 머리
         E(hx - r, hy - r, hx + r, hy + r, body)
+        if patches:  # 삼색: 머리 원의 조각(원 밖으로 안 나감) 주황/검정 + 몸 조각
+            hb = ((hx - r) * k, (hy - r) * k, (hx + r) * k, (hy + r) * k)
+            d.chord(hb, 195, 262, fill=mark)
+            d.chord(hb, 286, 345, fill="#3a3230")
+            if kind == "body":
+                bb = (11 * k, by * k, 35 * k, (by + 15) * k)
+                d.chord(bb, 300, 20, fill=mark)
+                d.chord(bb, 150, 215, fill="#3a3230")
         # 이마 무늬
         for dx in (-3, 0, 3):
             d.line(((hx + dx) * k, (hy - r + 1) * k, (hx + dx) * k, (hy - r + 4.5) * k), fill=mark, width=int(1.6 * k))
@@ -1507,13 +1645,15 @@ class Widget(tk.Tk):
         # 눈
         for ex in (hx - 3.5, hx + 3.5):
             if sleeping:
-                d.arc(((ex - 1.8) * k, (hy - 2) * k, (ex + 1.8) * k, (hy + 1) * k), 20, 160, fill=dark, width=int(1.2 * k))
+                d.arc(((ex - 1.8) * k, (hy - 2) * k, (ex + 1.8) * k, (hy + 1) * k), 20, 160, fill=eye_c, width=int(1.2 * k))
             else:
-                E(ex - 1.3, hy - 1.6, ex + 1.3, hy + 1.0, dark)
+                E(ex - 1.3, hy - 1.6, ex + 1.3, hy + 1.0, eye_c)
+                if eye:
+                    E(ex - 0.5, hy - 1.0, ex + 0.5, hy + 0.4, dark)   # 동공
         # 코 + 입 (ω)
-        d.polygon([((hx - 1) * k, (hy + 2) * k), ((hx + 1) * k, (hy + 2) * k), (hx * k, (hy + 3.2) * k)], fill=dark)
-        d.arc(((hx - 3) * k, (hy + 2) * k, hx * k, (hy + 5) * k), 0, 180, fill=dark, width=int(0.9 * k))
-        d.arc((hx * k, (hy + 2) * k, (hx + 3) * k, (hy + 5) * k), 0, 180, fill=dark, width=int(0.9 * k))
+        d.polygon([((hx - 1) * k, (hy + 2) * k), ((hx + 1) * k, (hy + 2) * k), (hx * k, (hy + 3.2) * k)], fill=face_c)
+        d.arc(((hx - 3) * k, (hy + 2) * k, hx * k, (hy + 5) * k), 0, 180, fill=face_c, width=int(0.9 * k))
+        d.arc((hx * k, (hy + 2) * k, (hx + 3) * k, (hy + 5) * k), 0, 180, fill=face_c, width=int(0.9 * k))
         # 수염
         for sgn in (-1, 1):
             for dy in (-0.5, 1.5):
