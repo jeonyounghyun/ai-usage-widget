@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.7.1"
+VERSION = "1.7.2"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -77,6 +77,7 @@ BACKOFF_MAX = 600                     # 조회 실패 시 간격을 2배씩 늘�
 STALE_WARN_MIN = 10                   # 갱신이 이 분수 넘게 안 되면 "N분 전 값"으로 표시
 CLI_TIMEOUT = 90
 ANIM_MS = 100                         # 애니메이션 틱
+COVER_MS = 25                         # 작업표시줄에 덮였는지 확인하는 주기 (미니 모드)
 BANNER_SEC = 90                       # 알림 배너 유지 시간
 STALE_AFTER_SEC = 3600                # 마지막 성공 후 이 시간이 지나야 회색(오래된 값) 처리
 CONFIG_PATH = Path(__file__).with_name("widget_state.json")
@@ -432,7 +433,11 @@ _user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
 _user32.MonitorFromPoint.restype = ctypes.c_void_p
 _MONENUM = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_double)
 _user32.EnumDisplayMonitors.argtypes = [ctypes.c_void_p, ctypes.c_void_p, _MONENUM, ctypes.c_double]
+_user32.GetWindow.argtypes = [_HWND, wintypes.UINT]
+_user32.GetWindow.restype = _HWND
 HWND_TOPMOST = _HWND(-1)
+GW_HWNDPREV = 3                       # z순서에서 한 칸 위(앞) 창
+SWP_QUIET = 0x0001 | 0x0002 | 0x0010   # NOSIZE | NOMOVE | NOACTIVATE
 
 
 class _RECT(ctypes.Structure):
@@ -441,6 +446,23 @@ class _RECT(ctypes.Structure):
 
 class _MONITORINFO(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", _RECT), ("rcWork", _RECT), ("dwFlags", wintypes.DWORD)]
+
+
+def taskbar_is_above(own_hwnd):
+    """작업표시줄이 z순서상 내 위에 있으면 True.
+    작업표시줄을 클릭하면 작업표시줄이 최상위 창들 위로 올라와 미니 위젯을 덮는다.
+    WindowFromPoint는 클릭 통과(WS_EX_TRANSPARENT) 모드에서 어긋나므로 z순서를 직접 걷는다."""
+    tb = _user32.FindWindowW("Shell_TrayWnd", None)
+    if not tb or not own_hwnd:
+        return False
+    cur = _user32.GetWindow(own_hwnd, GW_HWNDPREV)
+    for _ in range(40):               # 최상위 창은 몇 개 안 되므로 짧게 끊는다
+        if not cur:
+            return False
+        if cur == tb:
+            return True
+        cur = _user32.GetWindow(cur, GW_HWNDPREV)
+    return False
 
 
 def foreground_is_fullscreen(own_hwnd):
@@ -762,6 +784,7 @@ class Widget(tk.Tk):
         self._last_pcts = None
         self.refresh()
         self._tick()
+        self._watch_cover()
 
     # ------------------------------------------------------------ 메뉴
     def _build_menu(self):
@@ -910,7 +933,7 @@ class Widget(tk.Tk):
         self.canvas.config(width=w, height=h)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self._last_frame_key = None
-        if self.mini:  # 작업표시줄보다 위에 있도록 재확인 (HWND_TOPMOST, NOSIZE|NOMOVE|NOACTIVATE)
+        if self.mini:  # 작업표시줄보다 위에 있도록 재확인 (느린 안전망, 주 경로는 _watch_cover)
             _user32.SetWindowPos(self._hwnd(), HWND_TOPMOST, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
 
     def _set(self, key, value):
@@ -1396,6 +1419,17 @@ class Widget(tk.Tk):
         if not self.state.get("topmost", True):
             self.attributes("-topmost", False)
         Popup(self, "위젯은 여기 있어요 · 끄려면 우클릭 → 종료", INK_SOFT, None, seconds=6)
+
+    def _watch_cover(self):
+        """작업표시줄에 붙은 미니 위젯이 작업표시줄에 덮이면 즉시 다시 올린다.
+        _tick(1초)만으로는 최대 1초간 가려져 깜빡이는 것처럼 보인다."""
+        try:
+            if (self.mini and not self._hidden and self.state.get("topmost", True)
+                    and taskbar_is_above(self._hwnd())):
+                _user32.SetWindowPos(self._hwnd(), HWND_TOPMOST, 0, 0, 0, 0, SWP_QUIET)
+        except Exception:  # noqa: BLE001
+            pass
+        self.after(COVER_MS, self._watch_cover)
 
     def _check_fullscreen(self):
         want_hide = self.state.get("hide_fullscreen", True) and foreground_is_fullscreen(self._hwnd())
