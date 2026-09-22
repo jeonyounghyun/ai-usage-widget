@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.7.2"
+VERSION = "1.7.3"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -435,6 +435,40 @@ _MONENUM = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ct
 _user32.EnumDisplayMonitors.argtypes = [ctypes.c_void_p, ctypes.c_void_p, _MONENUM, ctypes.c_double]
 _user32.GetWindow.argtypes = [_HWND, wintypes.UINT]
 _user32.GetWindow.restype = _HWND
+# 옆에 띄워 둔 EDITH 위젯과 서로 가리지 않도록, 마지막에 눌린 쪽이 위로 온다.
+# 두 프로그램이 같은 파일 한 줄을 공유한다 (프로세스가 달라 메모리로는 못 나눈다).
+FOCUS_FILE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "widget_focus.txt"
+
+
+def claim_front(hwnd=0):
+    """'이름 창핸들' 한 줄. 다른 위젯은 이 핸들 바로 아래로 들어가 서로 가리지 않는다."""
+    try:
+        FOCUS_FILE.write_text(f"usage {int(hwnd)}", encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def front_other(own_hwnd):
+    """마지막에 눌린 쪽이 내가 아니면 그 창 핸들, 아니면 None"""
+    try:
+        name, _, h = FOCUS_FILE.read_text(encoding="utf-8").strip().partition(" ")
+        if name == "usage":
+            return None
+        h = int(h or 0)
+        return h if h and h != int(own_hwnd) and _user32.IsWindow(_HWND(h)) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def place_target(own_hwnd):
+    """어디에 끼워 넣을지: 내가 마지막에 눌린 쪽이면 맨 앞, 아니면 상대 바로 아래.
+    상대가 작업표시줄에 묻혀 있으면 일단 맨 앞으로 (같이 묻히지 않게)."""
+    other = front_other(own_hwnd)
+    if other and not taskbar_is_above(other):
+        return _HWND(other)
+    return HWND_TOPMOST
+
+
 HWND_TOPMOST = _HWND(-1)
 GW_HWNDPREV = 3                       # z순서에서 한 칸 위(앞) 창
 SWP_QUIET = 0x0001 | 0x0002 | 0x0010   # NOSIZE | NOMOVE | NOACTIVATE
@@ -934,7 +968,7 @@ class Widget(tk.Tk):
         self.geometry(f"{w}x{h}+{x}+{y}")
         self._last_frame_key = None
         if self.mini:  # 작업표시줄보다 위에 있도록 재확인 (느린 안전망, 주 경로는 _watch_cover)
-            _user32.SetWindowPos(self._hwnd(), HWND_TOPMOST, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+            _user32.SetWindowPos(self._hwnd(), place_target(self._hwnd()), 0, 0, 0, 0, SWP_QUIET)
 
     def _set(self, key, value):
         self.state[key] = value
@@ -1060,6 +1094,13 @@ class Widget(tk.Tk):
                 self._tip_job = self.after(600, lambda: self._tip_show(text, e.x_root, e.y_root))
 
     def _press(self, e):
+        # 누른 위젯이 위로 오게 (옆에 붙은 EDITH 위젯 등 다른 최상위 창에 가리지 않도록)
+        claim_front(self._hwnd())
+        try:
+            if self.state.get("topmost", True):
+                _user32.SetWindowPos(self._hwnd(), HWND_TOPMOST, 0, 0, 0, 0, SWP_QUIET)
+        except Exception:  # noqa: BLE001
+            pass
         if self._hit(e.x, e.y):
             self._drag = None
             return
@@ -1426,7 +1467,9 @@ class Widget(tk.Tk):
         try:
             if (self.mini and not self._hidden and self.state.get("topmost", True)
                     and taskbar_is_above(self._hwnd())):
-                _user32.SetWindowPos(self._hwnd(), HWND_TOPMOST, 0, 0, 0, 0, SWP_QUIET)
+                # 마지막에 눌린 게 옆 위젯이면 그 창 "바로 아래"로 올라간다.
+                # 작업표시줄보다는 위로 오면서 그 위젯을 가리지는 않는다.
+                _user32.SetWindowPos(self._hwnd(), place_target(self._hwnd()), 0, 0, 0, 0, SWP_QUIET)
         except Exception:  # noqa: BLE001
             pass
         self.after(COVER_MS, self._watch_cover)
@@ -1570,9 +1613,10 @@ class Widget(tk.Tk):
             d.ellipse(((dx) * S, 8 * S, (dx + 5) * S, 13 * S), fill=C_STALE if (stale or worst is None) else pct_color(worst))
             d.text((x * S, (MINI_NUM_Y + 1) * S), "5h", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
             x += d.textlength("5h", font=self.f_tiny) / S + 2
-            d.text((x * S, MINI_NUM_Y * S), t5, font=self.f_num,
+            f5 = self.f_num_s if len(t5) >= 4 else self.f_num   # 100%는 한 단계 작게 (뒤 7d가 잘리지 않게)
+            d.text((x * S, MINI_NUM_Y * S), t5, font=f5,
                    fill=(C_STALE if stale else pct_color(p5)), anchor="lm")
-            x += d.textlength(t5, font=self.f_num) / S + 5
+            x += d.textlength(t5, font=f5) / S + 5
             d.text((x * S, (MINI_NUM_Y + 1) * S), "7d", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
             x += d.textlength("7d", font=self.f_tiny) / S + 2
             d.text((x * S, MINI_NUM_Y * S), t7, font=self.f_small,
