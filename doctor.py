@@ -86,6 +86,16 @@ def check_files():
     return ok_claude, ok_codex
 
 
+def _codex_token_expired():
+    try:
+        import base64, time
+        tok = json.load(open(Path.home() / ".codex" / "auth.json", encoding="utf-8"))["tokens"]["access_token"]
+        seg = tok.split(".")[1]; seg += "=" * (-len(seg) % 4)
+        return json.loads(base64.urlsafe_b64decode(seg))["exp"] < time.time()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def diagnose(msg):
     m = msg.lower()
     if "reading claude code's credentials is off" in m or "credentials is off" in m:
@@ -94,6 +104,8 @@ def diagnose(msg):
         return FIXES["expired"]
     if "rate limit" in m:
         return FIXES["rate"]
+    if "authentication required" in m and _codex_token_expired():
+        return "GPT 접근 토큰이 만료됨(10일마다) -> 위젯이 켜져 있으면 1시간 안에 자동 갱신. 급하면 Codex 앱/CLI를 한 번 실행"
     if "not logged in" in m or "no auth" in m or "auth.json" in m or "authentication required" in m or "account not found" in m:
         return FIXES["codex_login"]
     if "no cookies" in m or "app-bound" in m:

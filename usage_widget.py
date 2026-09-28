@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.7.3"
+VERSION = "1.7.4"
 LOG_PATH = Path(__file__).with_name("widget.log")
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -81,6 +81,9 @@ COVER_MS = 25                         # 작업표시줄에 덮였는지 확인�
 BANNER_SEC = 90                       # 알림 배너 유지 시간
 STALE_AFTER_SEC = 3600                # 마지막 성공 후 이 시간이 지나야 회색(오래된 값) 처리
 CONFIG_PATH = Path(__file__).with_name("widget_state.json")
+CODEX_AUTH = Path.home() / ".codex" / "auth.json"
+CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"     # Codex CLI가 쓰는 공개 클라이언트 ID (비밀 아님)
+CODEX_REFRESH_MIN_SEC = 3600
 UPDATE_REPO = "jeonyounghyun/ai-usage-widget"
 UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 RELEASES_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30"
@@ -339,6 +342,44 @@ def check_update():
         if a.get("name", "").endswith(".zip"):
             return tag.lstrip("v"), a["browser_download_url"]
     return None
+
+
+def codex_token_expired():
+    """~/.codex/auth.json 접근 토큰의 만료 여부 (JWT exp, 네트워크 없음). 파일이 없거나 못 읽으면 None."""
+    try:
+        import base64
+        tok = json.load(open(CODEX_AUTH, encoding="utf-8"))["tokens"]["access_token"]
+        seg = tok.split(".")[1]
+        seg += "=" * (-len(seg) % 4)
+        return json.loads(base64.urlsafe_b64decode(seg))["exp"] < time.time() + 60
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def refresh_codex_token():
+    """Codex 접근 토큰은 10일마다 만료되는데 CodexBar는 갱신하지 않는다(Codex 앱을 켤 때까지 'Authentication required').
+    Codex CLI와 같은 방식으로 refresh_token으로 새 토큰을 받아 auth.json에 써 준다. 성공 True."""
+    d = json.load(open(CODEX_AUTH, encoding="utf-8"))
+    t = d.get("tokens") or {}
+    if not t.get("refresh_token"):
+        return False
+    body = json.dumps({"grant_type": "refresh_token", "refresh_token": t["refresh_token"],
+                       "client_id": CODEX_CLIENT_ID, "scope": "openid profile email"}).encode()
+    req = urllib.request.Request("https://auth.openai.com/oauth/token", data=body,
+                                 headers={"Content-Type": "application/json", "User-Agent": f"ai-usage-widget/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        res = json.loads(r.read().decode("utf-8"))
+    t["access_token"] = res["access_token"]
+    if res.get("refresh_token"):
+        t["refresh_token"] = res["refresh_token"]
+    if res.get("id_token"):
+        t["id_token"] = res["id_token"]
+    d["tokens"] = t
+    d["last_refresh"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    tmp = CODEX_AUTH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(d, indent=2), encoding="utf-8")
+    os.replace(tmp, CODEX_AUTH)
+    return True
 
 
 def release_notes_between(old_ver, new_ver):
@@ -1207,6 +1248,8 @@ class Widget(tk.Tk):
             self.error = err or "조회 실패"
             log.warning("fetch failed: %s", self.error)
         self.errors = errors or {}
+        if "authentication required" in (self.errors.get("codex") or "").lower():
+            self._maybe_refresh_codex()
         for prov, msg in self.errors.items():
             log.info("provider %s: %s", prov, msg[:160])
         self._schedule_next(ok=not (self.errors or self.error))
@@ -1249,6 +1292,22 @@ class Widget(tk.Tk):
         if idle > IDLE_REST_SEC:
             return "idle"
         return "walk"
+
+    def _maybe_refresh_codex(self):
+        """GPT 조회가 인증 거부됐고 토큰이 만료돼 있으면 갱신 시도 (1시간에 한 번). 성공하면 바로 다시 조회."""
+        if time.time() - getattr(self, "_codex_refresh_at", 0) < CODEX_REFRESH_MIN_SEC or codex_token_expired() is not True:
+            return
+        self._codex_refresh_at = time.time()
+
+        def run():
+            try:
+                ok = refresh_codex_token()
+                log.info("codex token refresh: %s", ok)
+                if ok:
+                    self.after(1500, self.refresh)
+            except Exception as ex:  # noqa: BLE001
+                log.warning("codex token refresh failed: %s", ex)
+        threading.Thread(target=run, daemon=True).start()
 
     def _check_alerts(self, data):
         """80% 돌파 / 100% 도달 / 리셋을 감지해 배너를 띄운다."""
@@ -1519,6 +1578,9 @@ class Widget(tk.Tk):
         parts = []
         for k in failed:
             err = (self.errors.get(k) or self.error or "").lower()
+            if k == "codex" and "authentication required" in err and codex_token_expired():
+                parts.append("GPT 토큰 갱신 중")   # 10일 만료 → 위젯이 자동 갱신
+                continue
             if "expired" in err or "re-authenticate" in err or "credentials is off" in err or "not logged in" in err:
                 parts.append(f"{names.get(k, k)} 재로그인 필요 · 우클릭 → 문제 해결")
                 continue
