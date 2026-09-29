@@ -199,6 +199,10 @@ def configure_codexbar(providers):
 # ---------------------------------------------------------------- 위젯 켜기/끄기, 바로가기
 def stop_widget(wait=8):
     """실행 중인 위젯을 부드럽게 끈다 (quit.flag). 안 꺼지면 강제 종료."""
+    # 예전 파이썬 설치본(pythonw usage_widget.py)은 quit.flag를 모르고, 같은 '이미 실행 중' 표시를 잡고 있어
+    # 새 exe 위젯이 안 뜬다 → 먼저 끈다
+    powershell("Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'pythonw.exe','python.exe' -and "
+               "$_.CommandLine -like '*usage_widget*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }", timeout=30)
     def running():
         code, out = run(["tasklist", "/fi", f"imagename eq {EXE_NAME}", "/fo", "csv", "/nh"])
         mine = {str(os.getpid()), str(os.getppid())}
