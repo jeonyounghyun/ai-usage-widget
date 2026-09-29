@@ -25,7 +25,7 @@ if (-not $py) { throw "Python not found" }
 Remove-Item dist/exe/AIUsageWidget.exe -ErrorAction SilentlyContinue
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 & $py @pyArgs -m PyInstaller --noconfirm --onefile --windowed --name AIUsageWidget --icon (Join-Path $PSScriptRoot "icon.ico") `
-    --hidden-import doctor --exclude-module numpy --distpath dist/exe --workpath build --specpath build usage_widget.py 2>&1 | Out-Null
+    --hidden-import doctor --hidden-import installer --hidden-import hidden_console --exclude-module numpy --distpath dist/exe --workpath build --specpath build usage_widget.py 2>&1 | Out-Null
 $ErrorActionPreference = $prev
 if (-not (Test-Path dist/exe/AIUsageWidget.exe)) { throw "exe build failed" }
 Copy-Item dist/exe/AIUsageWidget.exe AIUsageWidget.exe -Force   # ZIP에는 루트에 넣는다 (.gitignore)
