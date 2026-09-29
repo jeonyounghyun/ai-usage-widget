@@ -126,7 +126,8 @@ v1.8.0 이전에 ZIP으로 설치한 PC는 그대로 동작하고 자동 업데�
 
 ## 동작 원리
 
-- 위젯은 인증을 직접 하지 않습니다. Win-CodexBar의 `codexbar-cli.exe usage --source oauth`를 주기적으로 실행해 결과(JSON)만 읽습니다. 토큰 파일(`~/.claude/.credentials.json`, `~/.codex/auth.json`)만 읽고, 브라우저 쿠키나 `claude` 명령은 건드리지 않습니다.
+- 위젯은 인증을 직접 하지 않습니다. Win-CodexBar의 `codexbar-cli.exe usage --source oauth`를 주기적으로 실행해 결과(JSON)만 읽습니다. 브라우저 쿠키는 건드리지 않습니다.
+- 예외 하나: GPT 접근 토큰은 10일마다 만료되는데 Win-CodexBar가 갱신하지 않아, 위젯이 만료를 감지하면 Codex CLI와 같은 방식으로 새 토큰을 받아 `~/.codex/auth.json`에 씁니다.
 - 조회 주기는 사용량이 오르는 중이면 1분, 멈춰 있으면 3~5분, 실패하면 2배씩 물러납니다. 부팅 자동 실행이면 첫 조회를 2분 늦춥니다.
 - 카드는 값이 바뀔 때만 다시 그려 CPU를 거의 쓰지 않습니다.
 - 하루 한 번 GitHub Releases를 확인해 새 버전이면 알려줍니다.
@@ -141,6 +142,28 @@ v1.8.0 이전에 ZIP으로 설치한 PC는 그대로 동작하고 자동 업데�
 
 - Win-CodexBar CLI의 출력 형식과 Anthropic·OpenAI의 비공식 조회 방식에 의존합니다. 바뀌면 Win-CodexBar 업데이트를 기다려야 합니다.
 - Windows 전용.
+
+## 개인정보·보안
+
+- **사용량과 로그인 정보는 이 PC 밖으로 나가지 않습니다.** 위젯 제작자에게 보내는 데이터는 없고, 사용 통계(텔레메트리)도 모으지 않습니다.
+- 로그인 정보는 각 서비스의 공식 로그인 도구가 만든 파일을 그대로 씁니다. Claude는 `~/.claude/.credentials.json`(Claude Code), GPT는 `~/.codex/auth.json`(Codex CLI)입니다. 위젯이 비밀번호를 받거나 따로 저장하지 않습니다.
+- 위젯과 설치 창이 인터넷에 접속하는 곳은 아래가 전부입니다.
+
+| 접속 대상 | 목적 |
+|---|---|
+| Anthropic·OpenAI | 사용량 조회 (Win-CodexBar를 통해), GPT 토큰 갱신 |
+| GitHub (`api.github.com`, `github.com`) | 하루 한 번 새 버전 확인, 업데이트 파일 받기 |
+| winget·npm·claude.ai | 설치 창이 필요한 도구(Win-CodexBar, Node.js, Codex CLI, Claude Code)를 설치할 때만 |
+
+- 위젯이 PC에 남기는 것: 설치 폴더(`%LOCALAPPDATA%\Programs\ai-usage-widget`)의 exe·설정(`widget_state.json`)·기록(`widget.log`, `setup.log`), 바탕화면·시작 메뉴 바로가기, 자동 실행 항목. 기록 파일에는 토큰이 남지 않습니다.
+- 설치 창은 Win-CodexBar 설정을 바꿉니다. Claude 로그인 파일 읽기를 허용하고, 표시할 서비스를 고르고, CodexBar 트레이 앱의 자동 실행을 끕니다.
+- 서명 인증서가 없는 개인 제작 프로그램이라 처음 실행할 때 "Windows의 PC 보호" 창이 뜨고, 회사 백신이 "알 수 없는 프로그램"으로 기록할 수 있습니다. 모든 코드는 이 저장소에 공개되어 있어 직접 확인하고 빌드할 수 있습니다.
+
+## 면책
+
+- 이 프로젝트는 Anthropic, OpenAI, Win-CodexBar 제작자와 **무관한 개인 프로젝트**이며, 각 회사의 승인이나 후원을 받지 않았습니다.
+- 사용량 조회는 공식 공개 API가 아닌 방식에 의존합니다. 제공사가 바꾸면 언제든 숫자가 안 나오거나 공식 화면과 다를 수 있습니다.
+- 각 서비스의 이용 약관을 지킬 책임과 이 도구를 쓰면서 생기는 결과에 대한 책임은 사용자에게 있습니다. 소프트웨어는 MIT 라이선스에 따라 "있는 그대로" 제공됩니다.
 
 ## 라이선스
 
