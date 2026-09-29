@@ -17,6 +17,10 @@ k32.CreateFileW.restype = wintypes.HANDLE
 k32.CloseHandle.argtypes = [wintypes.HANDLE]
 k32.GetConsoleScreenBufferInfo.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
 k32.ReadConsoleOutputCharacterW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes._COORD, ctypes.POINTER(wintypes.DWORD)]
+k32.GetStdHandle.argtypes = [wintypes.DWORD]
+k32.GetStdHandle.restype = wintypes.HANDLE
+k32.SetStdHandle.argtypes = [wintypes.DWORD, wintypes.HANDLE]
+STD_HANDLES = (0xFFFFFFF6, 0xFFFFFFF5, 0xFFFFFFF4)   # 입력, 출력, 오류
 k32.WriteConsoleInputW.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
 
 GENERIC_RW = 0x80000000 | 0x40000000
@@ -55,8 +59,13 @@ class HiddenConsole:
     def _attached(self, fn):
         """이 프로세스의 콘솔에 잠깐 붙어서 fn(conout, conin)을 실행."""
         with _lock:
+            # AttachConsole은 이 프로세스의 표준 입출력을 그 콘솔로 바꾸고, FreeConsole 뒤엔 그 핸들이 무효가 된다.
+            # (창 프로그램 exe에서 이후 subprocess가 '핸들이 잘못되었습니다'로 실패) → 전후로 저장·복원
+            saved = [k32.GetStdHandle(n) for n in STD_HANDLES]
             k32.FreeConsole()
             if not k32.AttachConsole(self.proc.pid):
+                for n, hnd in zip(STD_HANDLES, saved):
+                    k32.SetStdHandle(n, hnd)
                 return None
             try:
                 out = k32.CreateFileW("CONOUT$", GENERIC_RW, SHARE_RW, None, OPEN_EXISTING, 0, None)
@@ -69,6 +78,8 @@ class HiddenConsole:
                             k32.CloseHandle(h)
             finally:
                 k32.FreeConsole()
+                for n, hnd in zip(STD_HANDLES, saved):
+                    k32.SetStdHandle(n, hnd)
 
     def screen(self):
         """콘솔 화면 버퍼 전체를 글자로 (줄 끝 공백 제거)."""
@@ -104,4 +115,5 @@ class HiddenConsole:
 
     def kill(self):
         if self.alive():
-            subprocess.run(["taskkill", "/f", "/t", "/pid", str(self.proc.pid)], capture_output=True, creationflags=NO_WINDOW)
+            subprocess.run(["taskkill", "/f", "/t", "/pid", str(self.proc.pid)], capture_output=True,
+                           stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)

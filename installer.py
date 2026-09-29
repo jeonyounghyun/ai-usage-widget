@@ -67,7 +67,7 @@ def run(cmd, timeout=None):
     """창 없이 실행하고 (종료코드, 출력)을 돌려준다."""
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=timeout, creationflags=NO_WINDOW)
+                           timeout=timeout, creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except (OSError, subprocess.TimeoutExpired) as ex:
         return -1, str(ex)
