@@ -17,6 +17,7 @@ CLI = LOCAL / "Programs" / "CodexBar" / "codexbar-cli.exe"
 CLAUDE_CRED = HOME / ".claude" / ".credentials.json"
 CODEX_AUTH = HOME / ".codex" / "auth.json"
 
+FROZEN = getattr(sys, "frozen", False)
 FIXES = {
     "cred_off": "사용량 읽기 허용이 꺼져 있음 -> 이 폴더의 install.bat 을 더블클릭 (설정을 자동으로 고침, 이미 된 단계는 건너뜀)",
     "expired": "Claude 로그인이 만료됨 -> 이 폴더의 relogin.bat 을 더블클릭 (또는 위젯 우클릭 -> 문제 해결 -> Claude 다시 로그인)",
@@ -25,6 +26,15 @@ FIXES = {
     "codex_login": "GPT 로그인이 없거나 거부됨 -> 이 폴더의 connect_gpt.bat 을 더블클릭 (다시 로그인함). GPT를 안 보면 위젯 우클릭 -> 'GPT 표시' 해제",
     "cli": "사용량 읽는 도구(Win-CodexBar)가 없음 -> 이 폴더의 install.bat 을 더블클릭",
 }
+
+if FROZEN:   # exe 설치본: 배치 파일 대신 위젯 메뉴 / 받은 exe 다시 실행으로 안내
+    FIXES.update({
+        "cred_off": "사용량 읽기 허용이 꺼져 있음 -> 위젯 우클릭 -> 문제 해결 -> 설치 다시 하기 (된 단계는 건너뜀)",
+        "expired": "Claude 로그인이 만료됨 -> 위젯 우클릭 -> 문제 해결 -> Claude 다시 로그인",
+        "claude_login": "Claude 로그인이 없음 -> 위젯 우클릭 -> 문제 해결 -> Claude 다시 로그인",
+        "codex_login": "GPT 로그인이 없거나 거부됨 -> 위젯 우클릭 -> 문제 해결 -> GPT 연결하기. GPT를 안 보면 우클릭 -> 'GPT 표시' 해제",
+        "cli": "사용량 읽는 도구(Win-CodexBar)가 없음 -> 받은 AIUsageWidget.exe를 다시 실행 (설치 창이 설치함)",
+    })
 
 
 def section(title):

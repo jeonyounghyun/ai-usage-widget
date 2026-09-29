@@ -52,11 +52,14 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
-LOG_PATH = APP_DIR / "widget.log"
+INSTALL_DIR = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "ai-usage-widget"   # exe 설치 위치 (installer.py와 같음)
+if FROZEN:
+    INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+LOG_PATH = (INSTALL_DIR if FROZEN else APP_DIR) / "widget.log"
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("widget")
@@ -96,6 +99,7 @@ UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.ba
                 "처음_읽어주세요.html")
 HERE = APP_DIR
 SHOW_FLAG = HERE / "show.flag"          # 바로가기가 "이미 켜져 있음"을 알리는 신호 파일 → 위젯을 앞으로
+QUIT_FLAG = HERE / "quit.flag"          # 설치/제거 창이 "꺼져 달라"는 신호 파일
 STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 STARTUP_BAT = STARTUP_DIR / "ai-usage-widget.bat"
 FONT_DIR = Path("C:/Windows/Fonts")
@@ -313,6 +317,17 @@ def fetch_usage(keys=("claude", "codex")):
 
 
 TOAST_PS1 = APP_DIR / "toast.ps1"
+TOAST_SRC = r"""param([string]$Title, [string]$Body)
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+$t = [System.Security.SecurityElement]::Escape($Title)
+$b = [System.Security.SecurityElement]::Escape($Body)
+$xml = "<toast><visual><binding template=`"ToastGeneric`"><text>$t</text><text>$b</text></binding></visual></toast>"
+$doc = New-Object Windows.Data.Xml.Dom.XmlDocument
+$doc.LoadXml($xml)
+$appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show([Windows.UI.Notifications.ToastNotification]::new($doc))
+"""
 
 
 def notify_windows(title, body):
@@ -429,6 +444,7 @@ def apply_update(zip_url, target_dir):
             _retry(lambda: old.exists() and old.unlink())
             _retry(lambda: os.replace(cur, old))   # 실행 중인 exe는 덮어쓸 수 없지만 이름은 바꿀 수 있다
             _retry(lambda: os.replace(new, cur))   # 방금 쓴 파일은 백신이 몇 초 잡고 있을 수 있어 재시도
+            return True
         for n in names:
             base = n.replace("\\", "/")
             if base in UPDATE_FILES or base.startswith("docs/"):
@@ -948,6 +964,7 @@ class Widget(tk.Tk):
         fix_menu.add_command(label="점검 실행 (어디가 막혔는지 확인)", command=lambda: self._run_tool("doctor.bat"))
         fix_menu.add_command(label="Claude 다시 로그인", command=lambda: self._run_tool("relogin.bat"))
         fix_menu.add_command(label="GPT 연결하기 (설치·로그인)", command=lambda: self._run_tool("connect_gpt.bat"))
+        fix_menu.add_command(label="설치 다시 하기 (된 단계는 건너뜀)", command=lambda: self._run_tool("install.bat"))
         fix_menu.add_separator()
         fix_menu.add_command(label="설치 폴더 열기", command=lambda: os.startfile(str(HERE)))
         fix_menu.add_command(label="로그 열기", command=lambda: os.startfile(str(LOG_PATH)))
@@ -975,7 +992,13 @@ class Widget(tk.Tk):
         self._set("click_through", self.ct_var.get())
 
     def _run_tool(self, name):
-        """폴더의 배치 파일을 새 콘솔 창으로 실행 (사용자가 안내를 보고 진행)."""
+        """문제 해결 도구 실행. exe면 exe 자신의 모드(--doctor 등), 파이썬 설치본이면 폴더의 배치 파일."""
+        if FROZEN:
+            mode = {"doctor.bat": "--doctor", "relogin.bat": "--relogin", "connect_gpt.bat": "--gpt",
+                    "uninstall.bat": "--uninstall", "install.bat": "--setup"}[name]
+            env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")
+            subprocess.Popen([sys.executable, mode], creationflags=0x00000008 | 0x00000200, close_fds=True, env=env)
+            return
         path = HERE / name
         if not path.exists():
             messagebox.showerror("문제 해결", f"{name} 파일이 없습니다.\n설치 폴더: {HERE}", parent=self)
@@ -1120,7 +1143,8 @@ class Widget(tk.Tk):
     def _toggle_autostart(self):
         if self.autostart_var.get():
             STARTUP_DIR.mkdir(parents=True, exist_ok=True)
-            STARTUP_BAT.write_text(f'@echo off\r\ncall "{APP_DIR / "toggle_widget.bat"}" /boot\r\n', encoding="utf-8")
+            line = f'start "" "{sys.executable}" --boot' if FROZEN else f'call "{APP_DIR / "toggle_widget.bat"}" /boot'
+            STARTUP_BAT.write_text(f'@echo off\r\n{line}\r\n', encoding="utf-8")
         else:
             try:
                 STARTUP_BAT.unlink()
@@ -1475,6 +1499,11 @@ class Widget(tk.Tk):
                 Popup(self, text, color, prov)
             except Exception:  # noqa: BLE001
                 log.exception("popup failed")
+        if self.state.get("toast", False) and not TOAST_PS1.exists():
+            try:
+                TOAST_PS1.write_text(TOAST_SRC, encoding="utf-8-sig")
+            except OSError:
+                pass
         if self.state.get("toast", False) and TOAST_PS1.exists():
             notify_windows("AI 사용량 위젯", text)
         if sound and self.state.get("sound", True):
@@ -1494,6 +1523,14 @@ class Widget(tk.Tk):
                 self._update_click_through()
             if self._ticks % 10 == 0:
                 self._check_fullscreen()
+                if QUIT_FLAG.exists():
+                    try:
+                        QUIT_FLAG.unlink()
+                    except OSError:
+                        pass
+                    log.info("quit requested")
+                    self.destroy()
+                    return
                 if SHOW_FLAG.exists():
                     try:
                         SHOW_FLAG.unlink()
@@ -2121,6 +2158,14 @@ if __name__ == "__main__":
     if "--doctor" in sys.argv:
         run_doctor()
         sys.exit(0)
+    modes = {"--setup": "setup", "--relogin": "relogin", "--gpt": "gpt", "--uninstall": "uninstall"}
+    mode = next((m for a, m in modes.items() if a in sys.argv), None)
+    if FROZEN and mode is None and (Path(sys.executable).resolve().parent != INSTALL_DIR.resolve() or not CODEXBAR_CLI.exists()):
+        mode = "setup"      # 받은 exe를 처음 실행했거나, 사용량 읽는 도구가 없음 → 설치 창
+    if mode:
+        import installer
+        installer.main(mode)
+        sys.exit(0)
     ok = acquire_single_instance()
     if not ok and "--restart" in sys.argv:       # 업데이트 직후: 이전 프로세스가 끝날 때까지 최대 15초 대기
         for _ in range(30):
@@ -2129,8 +2174,12 @@ if __name__ == "__main__":
                 ok = True
                 break
     if not ok:
-        sys.exit(0)  # 이미 실행 중
-    for leftover in (APP_DIR / "AIUsageWidget.old", APP_DIR / "AIUsageWidget.new"):
+        try:
+            SHOW_FLAG.write_text("show")    # 이미 실행 중 → 그 위젯을 앞으로 (바로가기 다시 누름)
+        except OSError:
+            pass
+        sys.exit(0)
+    for leftover in (APP_DIR / "AIUsageWidget.old", APP_DIR / "AIUsageWidget.new", QUIT_FLAG):
         try:
             leftover.unlink()
         except OSError:
