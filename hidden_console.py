@@ -7,7 +7,6 @@
 import ctypes
 import os
 import subprocess
-import threading
 from ctypes import wintypes
 
 k32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -28,7 +27,11 @@ SHARE_RW = 0x1 | 0x2
 OPEN_EXISTING = 3
 INVALID = wintypes.HANDLE(-1).value
 NO_WINDOW = 0x08000000
-_lock = threading.Lock()          # 한 프로세스는 한 번에 한 콘솔에만 붙을 수 있다
+
+
+def clean_env():
+    """PyInstaller exe의 내부 환경변수를 뺀 환경 (자식 프로세스가 exe의 임시 폴더를 물려받지 않게)."""
+    return {k: v for k, v in os.environ.items() if not k.startswith(("_PYI", "_MEI", "TCL_", "TK_"))}
 
 
 class _CSBI(ctypes.Structure):
@@ -48,38 +51,35 @@ class _INPUT(ctypes.Structure):
 
 
 class HiddenConsole:
-    def __init__(self, cmdline, env=None):
-        clean = {k: v for k, v in (env or os.environ).items() if not k.startswith(("_PYI", "_MEI", "TCL_", "TK_"))}
-        self.proc = subprocess.Popen(cmdline, creationflags=NO_WINDOW, env=clean,
-                                     stdin=None, stdout=None, stderr=None)
+    def __init__(self, cmdline):
+        self.proc = subprocess.Popen(cmdline, creationflags=NO_WINDOW, env=clean_env())
 
     def alive(self):
         return self.proc.poll() is None
 
     def _attached(self, fn):
         """이 프로세스의 콘솔에 잠깐 붙어서 fn(conout, conin)을 실행."""
-        with _lock:
-            # AttachConsole은 이 프로세스의 표준 입출력을 그 콘솔로 바꾸고, FreeConsole 뒤엔 그 핸들이 무효가 된다.
-            # (창 프로그램 exe에서 이후 subprocess가 '핸들이 잘못되었습니다'로 실패) → 전후로 저장·복원
-            saved = [k32.GetStdHandle(n) for n in STD_HANDLES]
-            k32.FreeConsole()
-            if not k32.AttachConsole(self.proc.pid):
-                for n, hnd in zip(STD_HANDLES, saved):
-                    k32.SetStdHandle(n, hnd)
-                return None
+        # AttachConsole은 이 프로세스의 표준 입출력을 그 콘솔로 바꾸고, FreeConsole 뒤엔 그 핸들이 무효가 된다.
+        # (창 프로그램 exe에서 이후 subprocess가 '핸들이 잘못되었습니다'로 실패) → 전후로 저장·복원
+        saved = [k32.GetStdHandle(n) for n in STD_HANDLES]
+        k32.FreeConsole()
+        if not k32.AttachConsole(self.proc.pid):
+            for n, hnd in zip(STD_HANDLES, saved):
+                k32.SetStdHandle(n, hnd)
+            return None
+        try:
+            out = k32.CreateFileW("CONOUT$", GENERIC_RW, SHARE_RW, None, OPEN_EXISTING, 0, None)
+            inp = k32.CreateFileW("CONIN$", GENERIC_RW, SHARE_RW, None, OPEN_EXISTING, 0, None)
             try:
-                out = k32.CreateFileW("CONOUT$", GENERIC_RW, SHARE_RW, None, OPEN_EXISTING, 0, None)
-                inp = k32.CreateFileW("CONIN$", GENERIC_RW, SHARE_RW, None, OPEN_EXISTING, 0, None)
-                try:
-                    return fn(out, inp)
-                finally:
-                    for h in (out, inp):
-                        if h and h != INVALID:
-                            k32.CloseHandle(h)
+                return fn(out, inp)
             finally:
-                k32.FreeConsole()
-                for n, hnd in zip(STD_HANDLES, saved):
-                    k32.SetStdHandle(n, hnd)
+                for h in (out, inp):
+                    if h and h != INVALID:
+                        k32.CloseHandle(h)
+        finally:
+            k32.FreeConsole()
+            for n, hnd in zip(STD_HANDLES, saved):
+                k32.SetStdHandle(n, hnd)
 
     def screen(self):
         """콘솔 화면 버퍼 전체를 글자로 (줄 끝 공백 제거)."""
@@ -97,11 +97,11 @@ class HiddenConsole:
             return "".join(r if len(r) == w and not r.endswith(" ") else r.rstrip() + "\n" for r in rows)
         return self._attached(read) or ""
 
-    def type(self, text, enter=True):
+    def type(self, text):
         """키 입력을 콘솔에 넣는다 (붙여넣기 코드 + Enter)."""
         def write(_out, inp):
             recs = []
-            for ch in text + ("\r" if enter else ""):
+            for ch in text + "\r":
                 vk = 0x0D if ch == "\r" else 0
                 for down in (True, False):
                     r = _INPUT()

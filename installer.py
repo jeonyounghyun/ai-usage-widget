@@ -24,7 +24,7 @@ from ctypes import wintypes
 from pathlib import Path
 from tkinter import messagebox
 
-from hidden_console import HiddenConsole
+from hidden_console import HiddenConsole, clean_env
 
 LOCAL = Path(os.environ["LOCALAPPDATA"])
 INSTALL_DIR = LOCAL / "Programs" / "ai-usage-widget"
@@ -101,8 +101,7 @@ def console_cmd(exe, *args, title=""):
     """로그인 도구를 새 CMD 창에서 실행하고 끝날 때까지 기다린다 (브라우저 로그인·코드 붙여넣기용)."""
     inner = " ".join([f'"{exe}"'] + list(args))
     cmd = f'cmd /c "title {title} & {inner}"'
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI", "_MEI", "TCL_", "TK_"))}
-    return subprocess.Popen(cmd, creationflags=NEW_CONSOLE, env=env).wait()
+    return subprocess.Popen(cmd, creationflags=NEW_CONSOLE, env=clean_env()).wait()
 
 
 def claude_login_state():
@@ -312,7 +311,6 @@ class SetupWindow(tk.Tk):
         self.reopen_btn.pack(side="left", padx=4)
         self._btn(lb, "나중에", lambda: self._login_cmd("cancel"), primary=False).pack(side="right", padx=4)
         self._btn(lb, "CMD 창에서 하기", lambda: self._login_cmd("console"), primary=False).pack(side="right", padx=4)
-        self._login_q = queue.Queue()
         self.bottom = tk.Frame(self, bg=CARD)
         self.bottom.pack(fill="x", padx=18, pady=(6, 16))
         self.status = tk.Label(self.bottom, text="", bg=CARD, fg=SOFT, font=(FONT, 9), anchor="w", justify="left", wraplength=330)
@@ -398,15 +396,13 @@ class SetupWindow(tk.Tk):
         self.lift()
 
     def hidden_login(self, exe, args, what):
-        """로그인 도구를 보이지 않는 창에서 실행하고 설치 창에서 진행. 결과: done / cancel / timeout / console"""
-        while not self._login_q.empty():
-            self._login_q.get_nowait()
+        """로그인 도구를 보이지 않는 창에서 실행하고 설치 창에서 진행. '나중에'를 눌렀으면 True."""
+        self._login_q = queue.Queue()
         hc = HiddenConsole(["cmd", "/c", exe, *args])
         slog(f"[{self.mode}] hidden login start: {what}")
         self.ui(self._login_show, f"브라우저에서 {what} 계정으로 로그인하세요. (브라우저가 열리는 데 몇 초 걸릴 수 있어요)\n"
                                   "허용(Authorize)을 누르면 자동으로 다음 단계로 넘어갑니다.")
-        url, code_shown, t0, opened, found_at = None, False, time.time(), False, 0.0
-        auto_code = ANSWERS.get("logincode")
+        url, code_shown, opened, found_at = None, False, False, 0.0
         try:
             while hc.alive():
                 scr = hc.screen()
@@ -420,13 +416,11 @@ class SetupWindow(tk.Tk):
                     opened = True
                     webbrowser.open(url)
                     slog(f"[{self.mode}] opened login url in browser")
-                if not code_shown and re.search(r"paste|code here|authorization code|enter.*code", scr, re.I):
+                if not code_shown and re.search(r"paste", scr, re.I):
                     code_shown = True
                     self.ui(lambda: (self.login_label.configure(text=self.login_label.cget("text") +
                                                                 "\n\n브라우저에 코드가 보이면 복사해서 아래 칸에 붙여넣고 [보내기]"),
                                      self.code_row.pack(anchor="w", padx=14, pady=(0, 6), before=self.reopen_btn.master)))
-                    if auto_code:
-                        self._login_q.put(("code", auto_code))
                 try:
                     cmd, val = self._login_q.get(timeout=1)
                 except queue.Empty:
@@ -438,17 +432,15 @@ class SetupWindow(tk.Tk):
                     webbrowser.open(url)
                 elif cmd == "cancel":
                     slog(f"[{self.mode}] login cancelled")
-                    return "cancel"
+                    return True
                 elif cmd == "console":
                     slog(f"[{self.mode}] login fallback to console")
                     hc.kill()
                     self.ui(self.login_frame.pack_forget)
                     console_cmd(exe, *args, title=f"{what} 로그인")
-                    return "console"
-                if time.time() - t0 > 900:
-                    return "timeout"
+                    return False
             slog(f"[{self.mode}] login tool exited")
-            return "done"
+            return False
         finally:
             hc.kill()
             self.ui(self.login_frame.pack_forget)
@@ -564,19 +556,14 @@ class SetupWindow(tk.Tk):
                 return True
             self.step("claude", "run", "브라우저에서 로그인 진행 중…")
             before = CLAUDE_CRED.stat().st_mtime if CLAUDE_CRED.exists() else 0
-            if self.hidden_login(exe, ["auth", "login"], "Claude") == "cancel":
+            if self.hidden_login(exe, ["auth", "login"], "Claude"):
                 self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
                 return True
             renewed = CLAUDE_CRED.exists() and CLAUDE_CRED.stat().st_mtime > before and claude_login_state() == "ok"
             slog(f"[{self.mode}] claude credentials renewed: {renewed}")
             configure_codexbar(["claude", "codex"])
-            self.step("claude", "run", "로그인 확인 중…")
-            for i in range(3):          # 새 토큰이 반영되기까지 몇 초 걸릴 수 있음
-                err = probe("claude")
-                slog(f"[{self.mode}] claude probe after login #{i + 1}: {err or 'ok'}")
-                if not err:
-                    break
-                time.sleep(3)
+            err = probe("claude")
+            slog(f"[{self.mode}] claude probe after login: {err or 'ok'}")
             if not err:
                 self.step("claude", "ok", "로그인 완료 (조회 확인)")
                 return True
