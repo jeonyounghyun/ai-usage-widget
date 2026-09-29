@@ -98,7 +98,7 @@ def find_tool(name):
 
 
 def console_cmd(exe, *args, title=""):
-    """로그인 도구를 새 검은 창에서 실행하고 끝날 때까지 기다린다 (브라우저 로그인·코드 붙여넣기용)."""
+    """로그인 도구를 새 CMD 창에서 실행하고 끝날 때까지 기다린다 (브라우저 로그인·코드 붙여넣기용)."""
     inner = " ".join([f'"{exe}"'] + list(args))
     cmd = f'cmd /c "title {title} & {inner}"'
     env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI", "_MEI", "TCL_", "TK_"))}
@@ -311,7 +311,7 @@ class SetupWindow(tk.Tk):
         self.reopen_btn = self._btn(lb, "브라우저 다시 열기", lambda: self._login_cmd("open"), primary=False)
         self.reopen_btn.pack(side="left", padx=4)
         self._btn(lb, "나중에", lambda: self._login_cmd("cancel"), primary=False).pack(side="right", padx=4)
-        self._btn(lb, "검은 창으로 하기", lambda: self._login_cmd("console"), primary=False).pack(side="right", padx=4)
+        self._btn(lb, "CMD 창에서 하기", lambda: self._login_cmd("console"), primary=False).pack(side="right", padx=4)
         self._login_q = queue.Queue()
         self.bottom = tk.Frame(self, bg=CARD)
         self.bottom.pack(fill="x", padx=18, pady=(6, 16))
@@ -558,18 +558,28 @@ class SetupWindow(tk.Tk):
                 self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
                 return True
             self.step("claude", "run", "브라우저에서 로그인 진행 중…")
+            before = CLAUDE_CRED.stat().st_mtime if CLAUDE_CRED.exists() else 0
             if self.hidden_login(exe, ["auth", "login"], "Claude") == "cancel":
                 self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
                 return True
+            renewed = CLAUDE_CRED.exists() and CLAUDE_CRED.stat().st_mtime > before and claude_login_state() == "ok"
+            slog(f"[{self.mode}] claude credentials renewed: {renewed}")
             configure_codexbar(["claude", "codex"])
-            err = probe("claude")
+            self.step("claude", "run", "로그인 확인 중…")
+            for i in range(3):          # 새 토큰이 반영되기까지 몇 초 걸릴 수 있음
+                err = probe("claude")
+                slog(f"[{self.mode}] claude probe after login #{i + 1}: {err or 'ok'}")
+                if not err:
+                    break
+                time.sleep(3)
             if not err:
                 self.step("claude", "ok", "로그인 완료 (조회 확인)")
                 return True
-            if "rate limit" in err.lower():
-                self.step("claude", "ok", "로그인 완료 (조회가 잠시 막혀 확인은 위젯이 잠시 뒤에 합니다)")
+            if renewed or "rate limit" in err.lower():
+                self.step("claude", "ok", "로그인 완료 (사용량 확인은 위젯이 잠시 뒤에 합니다)")
                 return True
-            reason = f"아직 로그인이 확인되지 않습니다 ({err[:60]}). 한 번 더 해 볼까요?"
+            reason = (f"아직 로그인이 확인되지 않습니다 ({err[:60]}). 한 번 더 해 볼까요?\n"
+                      "브라우저 로그인을 처음부터 다시 해 주세요 (한 번 쓴 코드는 다시 쓸 수 없어요).")
         self.step("claude", "warn", "로그인이 확인되지 않았습니다 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
         return True
 
