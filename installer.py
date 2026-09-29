@@ -38,6 +38,7 @@ CODEXBAR_SETTINGS = Path(os.environ["APPDATA"]) / "CodexBar" / "settings.json"
 CLAUDE_CRED = Path.home() / ".claude" / ".credentials.json"
 CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 DESKTOP_LNK = "AI 사용량 위젯.lnk"
+START_MENU_LNK = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / DESKTOP_LNK
 STARTUP_BAT = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "ai-usage-widget.bat"
 NO_WINDOW = 0x08000000
 NEW_CONSOLE = 0x00000010
@@ -228,9 +229,10 @@ def launch_widget(*args):
     subprocess.Popen([str(INSTALLED_EXE), *args], creationflags=DETACHED, close_fds=True, env=env, cwd=str(INSTALL_DIR))
 
 
-def make_shortcut():
+def make_shortcut(folder="Desktop"):
+    """바로가기 생성. folder: "Desktop"(바탕화면) / "Programs"(시작 메뉴 — 검색창에 '위젯'만 쳐도 나옴)."""
     ps = ('$ws = New-Object -ComObject WScript.Shell; '
-          f'$sc = $ws.CreateShortcut([IO.Path]::Combine([Environment]::GetFolderPath("Desktop"), "{DESKTOP_LNK}")); '
+          f'$sc = $ws.CreateShortcut([IO.Path]::Combine([Environment]::GetFolderPath("{folder}"), "{DESKTOP_LNK}")); '
           f'$sc.TargetPath = "{INSTALLED_EXE}"; $sc.WorkingDirectory = "{INSTALL_DIR}"; '
           f'$sc.IconLocation = "{INSTALLED_EXE},0"; $sc.Save()')
     return powershell(ps, timeout=30)[0] == 0
@@ -631,6 +633,7 @@ class SetupWindow(tk.Tk):
     def do_shortcut(self):
         self.step("shortcut", "run")
         ok = make_shortcut()
+        make_shortcut("Programs")
         auto = self.ask("autostart", "Windows를 켤 때 위젯도 자동으로 켤까요?", [("y", "켤게요"), ("n", "아니요")]) == "y"
         set_autostart(auto)
         self.step("shortcut", "ok" if ok else "warn",
@@ -660,6 +663,7 @@ def run_uninstall():
     for name in (DESKTOP_LNK, "AI Usage Widget.lnk"):
         (desktop / name).unlink(missing_ok=True)
     STARTUP_BAT.unlink(missing_ok=True)
+    START_MENU_LNK.unlink(missing_ok=True)
     wipe = messagebox.askyesno("위젯 제거", "위젯 폴더도 지울까요? 설정과 기록이 함께 지워집니다.\n" + str(INSTALL_DIR), parent=root)
     if wipe:
         # 실행 중인 exe는 자기 자신을 지울 수 없으므로, 이 창이 닫힌 뒤 3초 있다가 지운다

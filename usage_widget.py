@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.9.3"
+VERSION = "1.9.4"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -2229,6 +2229,10 @@ if __name__ == "__main__":
         except OSError:
             pass
         sys.exit(0)
+    if FROZEN:   # 예전에 설치한 사람도 시작 메뉴에서 찾을 수 있게 (바탕화면 것은 일부러 지웠을 수 있어 건드리지 않음)
+        import installer
+        if not installer.START_MENU_LNK.exists():
+            threading.Thread(target=installer.make_shortcut, args=("Programs",), daemon=True).start()
     for leftover in (APP_DIR / "AIUsageWidget.old", APP_DIR / "AIUsageWidget.new", QUIT_FLAG):
         try:
             leftover.unlink()
