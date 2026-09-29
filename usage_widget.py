@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -720,6 +720,7 @@ def clamp_to_screen(x, y):
 
 # ---------------------------------------------------------------- 알림 팝업 (위젯과 같은 디자인)
 POP_W, POP_H, POP_SEC = 370, 96, 8
+EXE_OFFER_DELAY_MS = int(os.environ.get("AIW_EXE_OFFER_MS", "20000"))   # Python 설치본에 exe 전환 안내를 띄우는 시점
 DIM_ALPHA = 0.45          # '마우스를 올릴 때만 선명하게' 모드의 평소 투명도
 _popups = []   # 떠 있는 팝업 (아래에서부터 쌓기)
 
@@ -890,6 +891,8 @@ class Widget(tk.Tk):
             self.after(2000, lambda: self._show_whats_new(prev))
         if not self.state.get("guided"):
             self.after(1500, self._first_run_guide)
+        if self._is_python_install() and not self.state.get("exe_offer_done"):
+            self.after(EXE_OFFER_DELAY_MS, self._offer_exe)
         self._ticks = 0
         self._fetching = False
         self._interval = REFRESH_SEC
@@ -965,6 +968,8 @@ class Widget(tk.Tk):
         fix_menu.add_command(label="Claude 다시 로그인", command=lambda: self._run_tool("relogin.bat"))
         fix_menu.add_command(label="GPT 연결하기 (설치·로그인)", command=lambda: self._run_tool("connect_gpt.bat"))
         fix_menu.add_command(label="설치 다시 하기 (된 단계는 건너뜀)", command=lambda: self._run_tool("install.bat"))
+        if self._is_python_install():
+            fix_menu.add_command(label="exe 버전으로 바꾸기 (Python 없이 실행)", command=self._confirm_exe)
         fix_menu.add_separator()
         fix_menu.add_command(label="설치 폴더 열기", command=lambda: os.startfile(str(HERE)))
         fix_menu.add_command(label="로그 열기", command=lambda: os.startfile(str(LOG_PATH)))
@@ -1450,6 +1455,51 @@ class Widget(tk.Tk):
         x = self.winfo_x() + 20
         y = self.winfo_y() + (H if not self.mini else -win.winfo_height() - 20)
         win.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    # ------------------------------------------------------------ Python 설치본 → exe 전환
+    @staticmethod
+    def _is_python_install():
+        """예전 ZIP 방식(파이썬으로 실행)으로 설치 폴더에 깔린 위젯. 개발 폴더에서 실행 중일 때는 제외."""
+        return not FROZEN and APP_DIR.resolve() == INSTALL_DIR.resolve()
+
+    def _offer_exe(self):
+        Popup(self, "exe 버전이 나왔어요 · Python 없이 더 안정적 · 클릭해서 바꾸기", C_OK, None,
+              on_click=self._confirm_exe, seconds=None)
+
+    def _confirm_exe(self):
+        ok = messagebox.askyesno(
+            "exe 버전으로 바꾸기",
+            "위젯을 Python 없이 도는 exe 버전으로 바꿀까요?\n\n"
+            "· 설정(위치·캐릭터 등)과 로그인은 그대로입니다\n"
+            "· 설치 창이 뜨면 질문 두 개(GPT 사용 여부, 자동 실행)에 답하면 끝납니다\n"
+            "· 지금 위젯은 잠깐 꺼졌다가 exe로 다시 켜집니다", parent=self)
+        self._set("exe_offer_done", True)
+        if not ok:
+            Popup(self, "나중에 바꾸려면: 우클릭 → 문제 해결 → exe 버전으로 바꾸기", INK_SOFT, None, seconds=10)
+            return
+        Popup(self, "exe 버전 내려받는 중… (20MB)", INK_SOFT, None, seconds=30)
+
+        def run():
+            try:
+                req = urllib.request.Request(UPDATE_API, headers={"User-Agent": f"ai-usage-widget/{VERSION}"})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    rel = json.loads(r.read().decode("utf-8"))
+                url = next(a["browser_download_url"] for a in rel.get("assets", []) if a.get("name") == EXE_NAME)
+                dest = Path(os.environ["TEMP"]) / EXE_NAME
+                part = dest.with_suffix(".part")
+                req = urllib.request.Request(url, headers={"User-Agent": f"ai-usage-widget/{VERSION}"})
+                with urllib.request.urlopen(req, timeout=120) as r, open(part, "wb") as out:
+                    shutil.copyfileobj(r, out)
+                _retry(lambda: os.replace(part, dest))
+                log.info("switching to exe: %s", dest)
+                # 설치 창이 이 파이썬 위젯을 끄고 exe를 설치 폴더에 넣은 뒤 exe 위젯을 켠다
+                subprocess.Popen([str(dest)], creationflags=0x00000008 | 0x00000200, close_fds=True)
+            except StopIteration:
+                self.after(0, lambda: Popup(self, "릴리즈에 exe 파일이 없습니다. 잠시 뒤 다시 시도하세요", C_WARN, None))
+            except Exception as ex:  # noqa: BLE001
+                log.exception("switch to exe failed")
+                self.after(0, lambda: Popup(self, f"exe 내려받기 실패: {str(ex)[:50]}", C_BAD, None))
+        threading.Thread(target=run, daemon=True).start()
 
     def _confirm_update(self, ver, url):
         ok = messagebox.askyesno("업데이트", f"v{ver}으로 업데이트할까요?\n\n내려받아 파일을 교체하고 위젯이 3초 뒤 자동으로 다시 켜집니다.\n설정과 위치는 그대로 유지됩니다.", parent=self)
