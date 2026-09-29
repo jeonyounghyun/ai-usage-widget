@@ -405,16 +405,21 @@ class SetupWindow(tk.Tk):
         slog(f"[{self.mode}] hidden login start: {what}")
         self.ui(self._login_show, f"브라우저에서 {what} 계정으로 로그인하세요. (브라우저가 열리는 데 몇 초 걸릴 수 있어요)\n"
                                   "허용(Authorize)을 누르면 자동으로 다음 단계로 넘어갑니다.")
-        url, code_shown, t0 = None, False, time.time()
+        url, code_shown, t0, opened, found_at = None, False, time.time(), False, 0.0
         auto_code = ANSWERS.get("logincode")
         try:
             while hc.alive():
                 scr = hc.screen()
                 urls = re.findall(r"https://\S+", scr)
                 if urls and urls[-1] != url:
-                    url = urls[-1]
+                    url, found_at = urls[-1], time.time()
                     self.ui(lambda: self.reopen_btn.configure(state="normal"))
                     slog(f"[{self.mode}] login url found ({len(url)} chars)")
+                # 창을 숨기면 로그인 도구가 브라우저를 못 여는 경우가 있어, 주소를 찾으면 직접 연다
+                if url and not opened and time.time() - found_at > 2:
+                    opened = True
+                    webbrowser.open(url)
+                    slog(f"[{self.mode}] opened login url in browser")
                 if not code_shown and re.search(r"paste|code here|authorization code|enter.*code", scr, re.I):
                     code_shown = True
                     self.ui(lambda: (self.login_label.configure(text=self.login_label.cget("text") +
