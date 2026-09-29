@@ -5,3 +5,6 @@ widget.log
 widget.log.*
 dist/
 pythonw.txt
+build/
+*.spec
+/AIUsageWidget.exe

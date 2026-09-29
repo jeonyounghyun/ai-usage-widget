@@ -9,7 +9,7 @@ New-Item -ItemType Directory dist -Force | Out-Null
 $zip = Join-Path (Resolve-Path dist) "$name.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 $files = @("처음_읽어주세요.html", "install.bat", "install.ps1", "configure_codexbar.ps1", "toggle_widget.bat", "usage_widget.py", "toast.ps1",
-           "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE") + (Get-ChildItem docs -Filter *.png | ForEach-Object { "docs/" + $_.Name })
+           "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE", "icon.ico") + (Get-ChildItem docs -Filter *.png | ForEach-Object { "docs/" + $_.Name })
 # py 런처만 있고 Python이 없는 경우가 있어 실제 실행되는 것을 고른다
 $py = $null; $pyArgs = @()
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"   # 런처의 stderr 출력이 스크립트를 멈추지 않게
@@ -21,10 +21,20 @@ foreach ($c in @(@("py", @("-3")), @("python", @()))) {
 }
 $ErrorActionPreference = $prev
 if (-not $py) { throw "Python not found" }
+# exe 빌드 (Python 없이 실행). numpy는 Pillow가 있으면 쓰는 선택 부품이라 빼서 크기를 줄인다
+Remove-Item dist/exe/AIUsageWidget.exe -ErrorAction SilentlyContinue
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+& $py @pyArgs -m PyInstaller --noconfirm --onefile --windowed --name AIUsageWidget --icon (Join-Path $PSScriptRoot "icon.ico") `
+    --hidden-import doctor --exclude-module numpy --distpath dist/exe --workpath build --specpath build usage_widget.py 2>&1 | Out-Null
+$ErrorActionPreference = $prev
+if (-not (Test-Path dist/exe/AIUsageWidget.exe)) { throw "exe build failed" }
+Copy-Item dist/exe/AIUsageWidget.exe AIUsageWidget.exe -Force   # ZIP에는 루트에 넣는다 (.gitignore)
+$files += "AIUsageWidget.exe"
 # 파일 목록은 한글 파일명이 명령줄에서 깨지지 않도록 UTF-8 파일로 넘긴다
 $listFile = Join-Path $env:TEMP "aiw_release_files.txt"
 [System.IO.File]::WriteAllLines($listFile, $files, (New-Object System.Text.UTF8Encoding($false)))
 & $py @pyArgs -c "import zipfile,sys; names=[l.strip() for l in open(sys.argv[2],encoding='utf-8') if l.strip()]; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); [z.write(f, f) for f in names]; z.close()" $zip $listFile
 Remove-Item $listFile -ErrorAction SilentlyContinue
+Remove-Item AIUsageWidget.exe -ErrorAction SilentlyContinue
 if (-not (Test-Path $zip)) { throw "zip not created" }
 "created: $zip"

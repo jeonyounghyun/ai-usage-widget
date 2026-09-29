@@ -5,16 +5,24 @@ rem   toggle_widget.bat /start   -> same as above (used by installer)
 rem   toggle_widget.bat /boot    -> start with --boot (used by Windows startup)
 rem   toggle_widget.bat /stop    -> stop the widget (used by uninstall)
 set "SCRIPT=%~dp0usage_widget.py"
+set "EXE=%~dp0AIUsageWidget.exe"
 
 if /i "%~1"=="/stop" (
     powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'usage_widget' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+    taskkill /f /im AIUsageWidget.exe >nul 2>&1
     exit /b 0
 )
 
 rem --- already running? then ask it to show itself instead of starting a second copy
-powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'usage_widget' }; if ($p) { exit 1 } else { exit 0 }"
+powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'AIUsageWidget.exe' -or ($_.Name -eq 'pythonw.exe' -and $_.CommandLine -match 'usage_widget') }; if ($p) { exit 1 } else { exit 0 }"
 if %errorlevel%==1 (
     echo show > "%~dp0show.flag"
+    exit /b 0
+)
+
+rem --- packaged build: no Python needed
+if exist "%EXE%" (
+    if /i "%~1"=="/boot" (start "" "%EXE%" --boot) else (start "" "%EXE%")
     exit /b 0
 )
 

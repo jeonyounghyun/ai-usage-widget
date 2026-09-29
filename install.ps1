@@ -258,6 +258,9 @@ Set-Location $Here
 
 # ---------- 1. Python
 Head "[1/7] Python (위젯을 움직이는 엔진)"
+if (Test-Path (Join-Path $Here "AIUsageWidget.exe")) {
+    Say "  위젯 실행 파일(AIUsageWidget.exe)에 포함되어 있어 설치할 필요 없습니다."
+} else {
 $found = Find-Python
 if (-not $found) {
     Say "  설치합니다 (1~2분)..."
@@ -274,6 +277,7 @@ if ($LASTEXITCODE -ne 0) { Warn "그림 부품 설치 실패. 인터넷 연결�
 $pyw = (& $py @pyArgs -c "import sys,os; p=os.path.join(os.path.dirname(sys.executable),'pythonw.exe'); print(p if os.path.exists(p) else '')").Trim()
 if ($pyw) { [IO.File]::WriteAllText((Join-Path $Here "pythonw.txt"), $pyw, (New-Object System.Text.UTF8Encoding($false))); Say "  위젯 실행용 Python: $pyw" }
 else { Warn "pythonw.exe를 찾지 못했습니다. 위젯이 안 뜨면 doctor.bat을 실행하세요." }
+}
 
 # ---------- 2. Win-CodexBar
 Head "[2/7] Win-CodexBar (사용량을 읽어 오는 도구)"
@@ -322,7 +326,7 @@ $ws = New-Object -ComObject WScript.Shell
 $sc = $ws.CreateShortcut([IO.Path]::Combine([Environment]::GetFolderPath("Desktop"), "AI 사용량 위젯.lnk"))
 $sc.TargetPath = Join-Path $Here "toggle_widget.bat"
 $sc.WorkingDirectory = $Here
-$sc.IconLocation = Join-Path $env:LOCALAPPDATA "Programs\CodexBar\icon.ico"
+$sc.IconLocation = if (Test-Path (Join-Path $Here "icon.ico")) { Join-Path $Here "icon.ico" } else { Join-Path $env:LOCALAPPDATA "Programs\CodexBar\icon.ico" }
 $sc.WindowStyle = 7
 $sc.Save()
 Say "  바탕화면에 'AI 사용량 위젯' 바로가기를 만들었습니다 (더블클릭: 켜기/다시 보이기. 끄기는 위젯 우클릭 → 종료)."

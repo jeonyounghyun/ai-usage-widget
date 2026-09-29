@@ -36,6 +36,9 @@ def section(title):
 
 def check_python():
     section("1. Python / Pillow")
+    if getattr(sys, "frozen", False):
+        print(OK + f"위젯 실행 파일(exe)에 Python {sys.version.split()[0]} 포함  ({sys.executable})")
+        return
     print(OK + f"Python {sys.version.split()[0]}  ({sys.executable})")
     try:
         import PIL  # noqa: F401
@@ -149,10 +152,13 @@ def check_usage():
 def check_widget():
     """위젯이 왜 안 뜨는지: 바로가기가 쓸 pythonw, 실행 중인지, 마지막 로그."""
     section("5. 위젯 실행 상태")
-    here = Path(__file__).resolve().parent
+    frozen = getattr(sys, "frozen", False)
+    here = Path(sys.executable).resolve().parent if frozen else Path(__file__).resolve().parent
     rec = here / "pythonw.txt"
     pyw = rec.read_text(encoding="utf-8").strip() if rec.exists() else ""
-    if pyw and Path(pyw).exists():
+    if frozen:
+        print(OK + f"위젯 실행 파일: {sys.executable}")
+    elif pyw and Path(pyw).exists():
         print(OK + f"위젯 실행용 pythonw: {pyw}")
     else:
         cand = Path(sys.executable).with_name("pythonw.exe")
@@ -163,7 +169,7 @@ def check_widget():
             print(BAD + "pythonw.exe 를 찾지 못함 -> 이 폴더의 install.bat 을 더블클릭")
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-Command",
-                              "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*usage_widget*' } | Measure-Object | Select-Object -Expand Count"],
+                              "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'AIUsageWidget.exe' -or ($_.Name -eq 'pythonw.exe' -and $_.CommandLine -like '*usage_widget*') } | Measure-Object | Select-Object -Expand Count"],
                              capture_output=True, text=True, timeout=30)
         n = int((out.stdout or "0").strip() or 0)
     except Exception:  # noqa: BLE001

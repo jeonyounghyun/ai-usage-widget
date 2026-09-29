@@ -52,8 +52,11 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.7.4"
-LOG_PATH = Path(__file__).with_name("widget.log")
+VERSION = "1.8.0"
+FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
+EXE_NAME = "AIUsageWidget.exe"
+APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
+LOG_PATH = APP_DIR / "widget.log"
 logging.basicConfig(handlers=[RotatingFileHandler(LOG_PATH, maxBytes=200_000, backupCount=1, encoding="utf-8")],
                     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("widget")
@@ -80,18 +83,18 @@ ANIM_MS = 100                         # 애니메이션 틱
 COVER_MS = 25                         # 작업표시줄에 덮였는지 확인하는 주기 (미니 모드)
 BANNER_SEC = 90                       # 알림 배너 유지 시간
 STALE_AFTER_SEC = 3600                # 마지막 성공 후 이 시간이 지나야 회색(오래된 값) 처리
-CONFIG_PATH = Path(__file__).with_name("widget_state.json")
+CONFIG_PATH = APP_DIR / "widget_state.json"
 CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"     # Codex CLI가 쓰는 공개 클라이언트 ID (비밀 아님)
 CODEX_REFRESH_MIN_SEC = 3600
 UPDATE_REPO = "jeonyounghyun/ai-usage-widget"
-UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
+UPDATE_API = os.environ.get("AIW_UPDATE_API") or f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"   # 환경변수는 업데이트 테스트용
 RELEASES_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30"
 UPDATE_CHECK_SEC = 24 * 3600          # 자동 업데이트 확인 주기
 UPDATE_FILES = ("usage_widget.py", "toast.ps1", "toggle_widget.bat", "install.bat", "install.ps1", "configure_codexbar.ps1",
                 "relogin.bat", "connect_gpt.bat", "uninstall.bat", "doctor.py", "doctor.bat", "README.md", "LICENSE",
                 "처음_읽어주세요.html")
-HERE = Path(__file__).resolve().parent
+HERE = APP_DIR
 SHOW_FLAG = HERE / "show.flag"          # 바로가기가 "이미 켜져 있음"을 알리는 신호 파일 → 위젯을 앞으로
 STARTUP_DIR = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 STARTUP_BAT = STARTUP_DIR / "ai-usage-widget.bat"
@@ -309,7 +312,7 @@ def fetch_usage(keys=("claude", "codex")):
     return result, errors
 
 
-TOAST_PS1 = Path(__file__).with_name("toast.ps1")
+TOAST_PS1 = APP_DIR / "toast.ps1"
 
 
 def notify_windows(title, body):
@@ -395,6 +398,17 @@ def release_notes_between(old_ver, new_ver):
     return sorted(out, key=lambda x: _ver_tuple(x[0]))
 
 
+def _retry(fn, tries=20, wait=0.5):
+    """파일 잠금(백신 검사 등)으로 PermissionError가 나면 잠시 뒤 다시 시도."""
+    for i in range(tries):
+        try:
+            return fn()
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(wait)
+
+
 def apply_update(zip_url, target_dir):
     """ZIP을 받아 target_dir의 프로그램 파일을 교체한다 (설정/로그는 건드리지 않음)."""
     req = urllib.request.Request(zip_url, headers={"User-Agent": f"ai-usage-widget/{VERSION}"})
@@ -404,6 +418,17 @@ def apply_update(zip_url, target_dir):
         names = z.namelist()
         if "usage_widget.py" not in names:
             raise RuntimeError("zip에 usage_widget.py가 없음")
+        if FROZEN:
+            if EXE_NAME not in names:
+                raise RuntimeError(f"zip에 {EXE_NAME}가 없음")
+            cur = Path(target_dir) / EXE_NAME
+            new = cur.with_suffix(".new")
+            with z.open(EXE_NAME) as src, open(new, "wb") as out:
+                shutil.copyfileobj(src, out)
+            old = cur.with_suffix(".old")
+            _retry(lambda: old.exists() and old.unlink())
+            _retry(lambda: os.replace(cur, old))   # 실행 중인 exe는 덮어쓸 수 없지만 이름은 바꿀 수 있다
+            _retry(lambda: os.replace(new, cur))   # 방금 쓴 파일은 백신이 몇 초 잡고 있을 수 있어 재시도
         for n in names:
             base = n.replace("\\", "/")
             if base in UPDATE_FILES or base.startswith("docs/"):
@@ -1094,12 +1119,8 @@ class Widget(tk.Tk):
 
     def _toggle_autostart(self):
         if self.autostart_var.get():
-            launcher = Path(os.environ["LOCALAPPDATA"]) / "Python" / "bin" / "pythonw.exe"  # 버전 무관 런처
-            pyw = Path(sys.executable).with_name("pythonw.exe")
-            exe = launcher if launcher.exists() else (pyw if pyw.exists() else Path(sys.executable))
             STARTUP_DIR.mkdir(parents=True, exist_ok=True)
-            STARTUP_BAT.write_text(
-                f'@echo off\r\nstart "" "{exe}" "{Path(__file__).resolve()}" --boot\r\n', encoding="utf-8")
+            STARTUP_BAT.write_text(f'@echo off\r\ncall "{APP_DIR / "toggle_widget.bat"}" /boot\r\n', encoding="utf-8")
         else:
             try:
                 STARTUP_BAT.unlink()
@@ -1416,7 +1437,7 @@ class Widget(tk.Tk):
 
         def run():
             try:
-                apply_update(url, Path(__file__).resolve().parent)
+                apply_update(url, APP_DIR)
                 self.after(0, self._restart_after_update, ver)
             except Exception as ex:  # noqa: BLE001
                 log.exception("update failed")
@@ -1429,6 +1450,13 @@ class Widget(tk.Tk):
         self._save_state()
         # 콘솔 없는 프로세스에서 cmd/timeout은 신뢰할 수 없으므로, 파이썬 헬퍼가 3초 기다렸다가
         # (현재 프로세스가 끝나 뮤텍스가 풀린 뒤) 새 버전을 띄운다.
+        flags = subprocess.CREATE_NO_WINDOW | 0x00000008 | 0x00000200   # 창 없음 | DETACHED | 새 그룹
+        if FROZEN:
+            # 새 exe가 이 프로세스의 임시 압축 해제 폴더(곧 지워짐)를 물려받지 않게 환경을 초기화 (PyInstaller 6.9+)
+            env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")
+            subprocess.Popen([str(APP_DIR / EXE_NAME), "--restart"], creationflags=flags, close_fds=True, env=env)
+            self.destroy()
+            return
         exe = Path(sys.executable)
         pyw = exe.with_name("pythonw.exe")
         if exe.name.lower() == "python.exe" and pyw.exists():
@@ -1436,8 +1464,7 @@ class Widget(tk.Tk):
         script = str(Path(__file__).resolve())
         helper = ("import time, subprocess, sys; time.sleep(3); "
                   f"subprocess.Popen([sys.executable, r'{script}'], close_fds=True)")
-        flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-        subprocess.Popen([str(exe), "-c", helper], creationflags=flags | 0x00000008 | 0x00000200, close_fds=True)
+        subprocess.Popen([str(exe), "-c", helper], creationflags=flags, close_fds=True)
         self.destroy()
 
     def _alert(self, text, color, prov=None, sound=False):
@@ -2072,9 +2099,42 @@ class Widget(tk.Tk):
             d.text((x + 17 * px - 4, y - 2 + phase * 2), "z", font=self.f_z, fill=INK_SOFT)
 
 
+def run_doctor():
+    """exe 안에서 점검 도구 실행: 창 없는 exe라 콘솔을 새로 만들어 붙인다."""
+    if FROZEN:
+        ctypes.windll.kernel32.AllocConsole()
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+        sys.stderr = sys.stdout
+        sys.stdin = open("CONIN$", "r", encoding="utf-8")
+    import doctor
+    try:
+        doctor.main()
+    finally:
+        try:
+            input("\n닫으려면 Enter...")
+        except EOFError:
+            pass
+
+
 if __name__ == "__main__":
-    if not acquire_single_instance():
+    if "--doctor" in sys.argv:
+        run_doctor()
+        sys.exit(0)
+    ok = acquire_single_instance()
+    if not ok and "--restart" in sys.argv:       # 업데이트 직후: 이전 프로세스가 끝날 때까지 최대 15초 대기
+        for _ in range(30):
+            time.sleep(0.5)
+            if acquire_single_instance():
+                ok = True
+                break
+    if not ok:
         sys.exit(0)  # 이미 실행 중
+    for leftover in (APP_DIR / "AIUsageWidget.old", APP_DIR / "AIUsageWidget.new"):
+        try:
+            leftover.unlink()
+        except OSError:
+            pass
     if not CODEXBAR_CLI.exists():
         import tkinter.messagebox as mb
         root = tk.Tk(); root.withdraw()
