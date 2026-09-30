@@ -611,7 +611,7 @@ class SetupWindow(tk.Tk):
             npm = find_tool("npm")
             if npm:
                 self.step("gpt", "run", "GPT 로그인 도구(Codex CLI) 설치 중…")
-                run(["cmd", "/c", npm, "install", "-g", "@openai/codex"], timeout=900)
+                run(f'cmd /c ""{npm}" install -g @openai/codex"', timeout=900)   # 경로 전체를 따옴표로 (사용자 폴더에 괄호가 있어도)
                 add_path(os.path.join(os.environ["APPDATA"], "npm"))
         codex = find_tool("codex")
         if not codex:
@@ -622,7 +622,7 @@ class SetupWindow(tk.Tk):
             configure_codexbar(["claude", "codex"])
             err = probe("codex")
             if err and re.search(r"authentication|not logged|auth|expired|401|unauthorized|account not found", err, re.I):
-                run(["cmd", "/c", codex, "logout"], timeout=60)
+                run(f'cmd /c ""{codex}" logout"', timeout=60)
                 need = True
         if need:
             ans = self.ask("gptlogin", "[로그인 시작]을 누르면 브라우저가 열립니다.\nChatGPT 계정으로 로그인하면 자동으로 넘어갑니다.",
