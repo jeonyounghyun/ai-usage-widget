@@ -98,9 +98,10 @@ def find_tool(name):
     return shutil.which(name)
 
 
-def console_cmd(exe, *args, title=""):
-    """로그인 도구를 새 CMD 창에서 실행하고 끝날 때까지 기다린다 (브라우저 로그인·코드 붙여넣기용)."""
-    inner = " ".join([f'"{exe}"'] + list(args))
+def console_cmd(exe, *args, title="", pause=False):
+    """로그인 도구를 새 CMD 창에서 실행하고 끝날 때까지 기다린다 (브라우저 로그인·코드 붙여넣기용).
+    pause: 끝나도 창을 닫지 않고 키 입력을 기다림 (오류 문구를 읽을 수 있게)."""
+    inner = " ".join([f'"{exe}"'] + list(args)) + (" & pause" if pause else "")
     cmd = f'cmd /c "title {title} & {inner}"'
     return subprocess.Popen(cmd, creationflags=NEW_CONSOLE, env=clean_env()).wait()
 
@@ -397,17 +398,20 @@ class SetupWindow(tk.Tk):
         self.login_frame.pack(fill="x", padx=18, pady=(8, 4), before=self.bottom)
         self.lift()
 
-    def hidden_login(self, exe, args, what):
-        """로그인 도구를 보이지 않는 창에서 실행하고 설치 창에서 진행. '나중에'를 눌렀으면 True."""
+    def hidden_login(self, exe, args, what, fallback=None):
+        """로그인 도구를 보이지 않는 창에서 실행하고 설치 창에서 진행. '나중에'를 눌렀으면 True.
+        fallback: 주소도 못 보고 끝났을 때 CMD 창에서 대신 실행할 (인자, 안내문). 없으면 같은 명령."""
         self._login_q = queue.Queue()
-        hc = HiddenConsole(["cmd", "/c", exe, *args])
+        # 도구가 끝난 뒤에도 3초간 창을 남겨 마지막 화면(오류 문구)을 읽을 수 있게
+        hc = HiddenConsole(f'cmd /c ""{exe}" {" ".join(args)} & ping -n 4 127.0.0.1 >nul"')
         slog(f"[{self.mode}] hidden login start: {what}")
         self.ui(self._login_show, f"브라우저에서 {what} 계정으로 로그인하세요. (브라우저가 열리는 데 몇 초 걸릴 수 있어요)\n"
                                   "허용(Authorize)을 누르면 자동으로 다음 단계로 넘어갑니다.")
-        url, code_shown, opened, found_at = None, False, False, 0.0
+        url, code_shown, opened, found_at, last = None, False, False, 0.0, ""
         try:
             while hc.alive():
                 scr = hc.screen()
+                last = scr.strip() or last
                 urls = re.findall(r"https://\S+", scr)
                 if urls and urls[-1] != url:
                     url, found_at = urls[-1], time.time()
@@ -442,6 +446,12 @@ class SetupWindow(tk.Tk):
                     console_cmd(exe, *args, title=f"{what} 로그인")
                     return False
             slog(f"[{self.mode}] login tool exited")
+            if not url:   # 주소도 못 보고 끝남 (도구 버전 차이 등) → 기록 남기고 보이는 CMD 창으로 다시
+                slog(f"[{self.mode}] no login url; last screen: {last[-600:]!r}")
+                self.ui(self.login_frame.pack_forget)
+                fargs, guide = fallback or (args, "CMD 창의 안내를 따라 주세요.")
+                self.ask("fallback", f"{what} 로그인을 CMD 창에서 진행합니다.\n{guide}", [("ok", "CMD 창 열기")])
+                console_cmd(exe, *fargs, title=f"{what} 로그인", pause=fargs == args)
             return False
         finally:
             hc.kill()
@@ -558,7 +568,11 @@ class SetupWindow(tk.Tk):
                 return True
             self.step("claude", "run", "브라우저에서 로그인 진행 중…")
             before = CLAUDE_CRED.stat().st_mtime if CLAUDE_CRED.exists() else 0
-            if self.hidden_login(exe, ["auth", "login"], "Claude"):
+            # 오래된 Claude Code에는 'auth login'이 없어 바로 끝남 → 대화형 claude의 /login으로
+            old_way = ([], "① 로그인 방식을 물으면 'Claude account with subscription' 선택\n"
+                           "② 브라우저에서 로그인 → Authorize, 코드가 나오면 CMD 창에 붙여넣고 Enter\n"
+                           "③ '>' 입력창이 바로 뜨면 /login 입력 → 로그인 → 끝나면 /exit 입력")
+            if self.hidden_login(exe, ["auth", "login"], "Claude", fallback=old_way):
                 self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
                 return True
             renewed = CLAUDE_CRED.exists() and CLAUDE_CRED.stat().st_mtime > before and claude_login_state() == "ok"

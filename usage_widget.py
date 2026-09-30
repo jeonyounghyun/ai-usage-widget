@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.9.4"
+VERSION = "1.9.5"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
