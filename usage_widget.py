@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.9.6"
+VERSION = "1.9.7"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -951,6 +951,9 @@ class Widget(tk.Tk):
         self.pace_var = tk.BooleanVar(value=self.state.get("pace", False))
         self.menu.add_checkbutton(label="소진 예측 표시 (리셋 전에 모자랄지)", variable=self.pace_var,
                                   command=lambda: self._set("pace", self.pace_var.get()))
+        self.remain_var = tk.BooleanVar(value=self.state.get("remain", False))
+        self.menu.add_checkbutton(label="남은 %로 표시 (사용률 대신)", variable=self.remain_var,
+                                  command=lambda: self._set("remain", self.remain_var.get()))
         self.mini_reset_var = tk.BooleanVar(value=self.state.get("mini_reset", True))
         self.menu.add_checkbutton(label="미니 모드에 5시간 리셋 남은 시간 표시", variable=self.mini_reset_var,
                                   command=lambda: self._set("mini_reset", self.mini_reset_var.get()))
@@ -1749,7 +1752,7 @@ class Widget(tk.Tk):
             fb = extra_window(u, "fable")
             parts.append((fb.get("used_percent"), u.get("login_method"), self._is_stale(key)))
         parts.append(self._status()[:2])
-        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), self.state.get("mini_reset", True), getattr(self, "_ct_now", False), self.char, THEME_NOW))
+        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), self.state.get("mini_reset", True), self.state.get("remain", False), getattr(self, "_ct_now", False), self.char, THEME_NOW))
         return tuple(parts)
 
     def draw(self):
@@ -1798,8 +1801,7 @@ class Widget(tk.Tk):
             stale = self._is_stale(key)
             p5 = (u.get("primary") or {}).get("used_percent")
             p7 = (u.get("secondary") or {}).get("used_percent")
-            t5 = "–" if p5 is None else f"{int(round(p5))}%"
-            t7 = "–" if p7 is None else f"{int(round(p7))}%"
+            t5, t7 = self._pct_txt(p5), self._pct_txt(p7)
             x = ox + (30 if self.char != "none" else 4)
             d.text((x * S, 4 * S), name, font=self.f_tiny, fill=accent)           # 서비스 라벨 (윗줄)
             worst = max([v for v in (p5, p7) if v is not None], default=None)     # 상태 점: 5h/7d 중 나쁜 쪽 색
@@ -1854,7 +1856,7 @@ class Widget(tk.Tk):
             if fb.get("used_percent") is not None:
                 fp = fb["used_percent"]
                 bx0, bx1, by = ox + 146, ox + half - 30, 49
-                d.text((tx * S, (by - 5) * S), f"Fable 주간 {int(fp)}%", font=self.f_tiny, fill=INK_SOFT)
+                d.text((tx * S, (by - 5) * S), f"Fable 주간 {self._pct_txt(fp)}", font=self.f_tiny, fill=INK_SOFT)
                 tips.append((tx, by - 7, bx1, by + 8, TIPS["fable"]))
                 d.rounded_rectangle((bx0 * S, by * S, bx1 * S, (by + 4) * S), radius=2 * S, fill=TRACK)
                 fx = bx0 + (bx1 - bx0) * min(fp, 100) / 100
@@ -1867,7 +1869,7 @@ class Widget(tk.Tk):
                 gx, gy = ox + j * 138, 62
                 self._gauge(d, gx, gy, win.get("used_percent"), stale, elapsed=window_elapsed(win))
                 tips.append((gx, gy, gx + GAUGE + 100, gy + 40, TIPS[wkey]))
-                d.text(((gx + GAUGE + 6) * S, (gy + 9) * S), wname, font=self.f_small, fill=INK)
+                d.text(((gx + GAUGE + 6) * S, (gy + 9) * S), wname + (" 남음" if self.state.get("remain") else ""), font=self.f_small, fill=INK)
                 d.text(((gx + GAUGE + 6) * S, (gy + 27) * S), fmt_remaining(win.get("resets_at"), win.get("used_percent")),
                        font=self.f_tiny, fill=INK_SOFT)
                 if self.state.get("pace", False) and not stale:
@@ -1915,6 +1917,12 @@ class Widget(tk.Tk):
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, W - 1, H - 1), radius=RADIUS, fill=255)
         return Image.composite(out, Image.new("RGB", (W, H), CHROMA), mask)
 
+    def _pct_txt(self, pct):
+        """퍼센트 숫자 문구. '남은 %' 설정이면 100-사용률 (색·도넛은 그대로 사용률 기준)."""
+        if pct is None:
+            return "–"
+        return f"{int(round(100 - pct if self.state.get('remain') else pct))}%"
+
     def _gauge(self, d, x, y, pct, stale, elapsed=None):
         """도넛. elapsed(0~1)가 있으면 안쪽에 얇은 '시간 경과' 링을 그린다 (사용률보다 시간이 많이 지났으면 여유)."""
         S = SS
@@ -1933,9 +1941,7 @@ class Widget(tk.Tk):
                 a = math.radians(ang)
                 px, py = cx + rm * math.cos(a), cy + rm * math.sin(a)
                 d.ellipse((px - w / 2, py - w / 2, px + w / 2, py + w / 2), fill=col)
-            txt = f"{int(round(pct))}%"
-        else:
-            txt = "–"
+        txt = self._pct_txt(pct)
         d.ellipse(inner, fill=CARD)
         if elapsed is not None and not stale:
             tw = TIME_RING_W * S
