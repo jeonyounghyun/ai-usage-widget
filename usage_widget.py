@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.9.7"
+VERSION = "1.9.8"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -1932,9 +1932,10 @@ class Widget(tk.Tk):
         outer = (cx - R, cy - R, cx + R, cy + R)
         inner = (cx - R + w, cy - R + w, cx + R - w, cy + R - w)
         d.ellipse(outer, fill=TRACK)
+        remain = self.state.get("remain")   # 남은 % 모드: 도넛·시간 링 모두 남은 만큼 (점점 줄어듦). 색은 사용률 기준
         if pct is not None:
             col = C_STALE if stale else pct_color(pct)
-            sweep = max(1, min(359.9, pct * 3.6))
+            sweep = max(1, min(359.9, (100 - pct if remain else pct) * 3.6))
             d.pieslice(outer, -90, -90 + sweep, fill=col)
             rm = R - w / 2
             for ang in (-90, -90 + sweep):
@@ -1946,7 +1947,7 @@ class Widget(tk.Tk):
         if elapsed is not None and not stale:
             tw = TIME_RING_W * S
             ring = inner   # 링 두께는 안쪽으로 들어가므로 bbox=inner면 가장자리에 붙음 (숫자와 간격 확보)
-            d.arc(ring, -90, -90 + max(1, min(359.9, elapsed * 360)), fill=C_STALE, width=tw)
+            d.arc(ring, -90, -90 + max(1, min(359.9, (1 - elapsed if remain else elapsed) * 360)), fill=C_STALE, width=tw)
         f = self.f_num_s if len(txt) >= 4 else self.f_num
         d.text((cx, cy), txt, font=f, fill=INK_SOFT if stale else INK, anchor="mm")
 
