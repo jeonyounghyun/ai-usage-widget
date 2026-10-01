@@ -52,7 +52,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.9.5"
+VERSION = "1.9.6"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -288,6 +288,18 @@ def fmt_remaining(resets_at, pct=None):
     if h:
         return f"{h}시간 {m}분 후"
     return f"{m}분 후"
+
+
+def fmt_short(resets_at):
+    """미니 모드용 짧은 남은 시간: 2h29m / 29m. 시각이 없거나 지났으면 빈 문자열."""
+    try:
+        sec = int((datetime.fromisoformat(resets_at.replace("Z", "+00:00")) - datetime.now(timezone.utc)).total_seconds())
+    except (AttributeError, ValueError):
+        return ""
+    if sec <= 0:
+        return ""
+    h, m = divmod(sec // 60, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m"
 
 
 def fetch_usage(keys=("claude", "codex")):
@@ -939,6 +951,9 @@ class Widget(tk.Tk):
         self.pace_var = tk.BooleanVar(value=self.state.get("pace", False))
         self.menu.add_checkbutton(label="소진 예측 표시 (리셋 전에 모자랄지)", variable=self.pace_var,
                                   command=lambda: self._set("pace", self.pace_var.get()))
+        self.mini_reset_var = tk.BooleanVar(value=self.state.get("mini_reset", True))
+        self.menu.add_checkbutton(label="미니 모드에 5시간 리셋 남은 시간 표시", variable=self.mini_reset_var,
+                                  command=lambda: self._set("mini_reset", self.mini_reset_var.get()))
 
         alert_menu = tk.Menu(self.menu, **kw)
         self.popup_var = tk.BooleanVar(value=self.state.get("popup", True))
@@ -1734,7 +1749,7 @@ class Widget(tk.Tk):
             fb = extra_window(u, "fable")
             parts.append((fb.get("used_percent"), u.get("login_method"), self._is_stale(key)))
         parts.append(self._status()[:2])
-        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), getattr(self, "_ct_now", False), self.char, THEME_NOW))
+        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), self.state.get("mini_reset", True), getattr(self, "_ct_now", False), self.char, THEME_NOW))
         return tuple(parts)
 
     def draw(self):
@@ -1772,11 +1787,14 @@ class Widget(tk.Tk):
         d.rounded_rectangle((0, 0, MINI_W * S - 1, MINI_H * S - 1), radius=(MINI_H // 2) * S,
                             outline=CARD_EDGE, width=2 * S)
         self._buttons = {}
-        self._tips = [(0, 0, MINI_W, MINI_H, TIPS["mini"])]
+        self._tips = []
         half = MINI_SEC_W
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
             ox = 8 + i * half
             u = self.usage.get(key) or {}
+            resets = [f"{lbl} 리셋: {fmt_remaining(w.get('resets_at'), w.get('used_percent')) or '–'}"
+                      for lbl, w in (("5시간", u.get("primary") or {}), ("7일", u.get("secondary") or {}))]
+            self._tips.append((i * half, 0, (i + 1) * half, MINI_H, f"{name}\n" + "\n".join(resets) + "\n\n" + TIPS["mini"]))
             stale = self._is_stale(key)
             p5 = (u.get("primary") or {}).get("used_percent")
             p7 = (u.get("secondary") or {}).get("used_percent")
@@ -1787,6 +1805,10 @@ class Widget(tk.Tk):
             worst = max([v for v in (p5, p7) if v is not None], default=None)     # 상태 점: 5h/7d 중 나쁜 쪽 색
             dx = x + d.textlength(name, font=self.f_tiny) / S + 4
             d.ellipse(((dx) * S, 8 * S, (dx + 5) * S, 13 * S), fill=C_STALE if (stale or worst is None) else pct_color(worst))
+            left = self.state.get("mini_reset", True) and fmt_short((u.get("primary") or {}).get("resets_at"))   # 5시간 창 리셋까지 (윗줄 오른쪽)
+            if left:
+                rx = min(ox + half - 12, MINI_W - 16)   # 마지막 칸은 둥근 모서리를 피한다
+                d.text((rx * S, 4 * S), left, font=self.f_tiny, fill=INK_SOFT, anchor="ra")
             d.text((x * S, (MINI_NUM_Y + 1) * S), "5h", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
             x += d.textlength("5h", font=self.f_tiny) / S + 2
             f5 = self.f_num_s if len(t5) >= 4 else self.f_num   # 100%는 한 단계 작게 (뒤 7d가 잘리지 않게)
