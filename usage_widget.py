@@ -44,8 +44,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
+# Let Windows scale the widget for high-DPI displays (e.g. 4K at 175%). The widget is drawn at 100% pixel
+# sizes; GDI-scaled mode enlarges it to the display scale. Per-monitor awareness made it tiny on 4K.
+# ponytail: the image is enlarged, so text is slightly soft above 150%. Render at scale if that matters.
 try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-5))   # UNAWARE_GDISCALED
 except Exception:  # noqa: BLE001
     pass
 
