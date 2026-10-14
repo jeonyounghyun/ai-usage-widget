@@ -293,6 +293,16 @@ def fmt_remaining(resets_at, pct=None):
     return f"{m}분 후"
 
 
+def shown_windows(u):
+    """표시할 창 목록. 5시간 창이 없고 7일 창만 있으면(주간 한도만 있는 요금제) 7일만."""
+    return [w for w in WINDOWS if u.get(w[0]) or not u.get("secondary")]
+
+
+def main_window(u):
+    """캐릭터·갱신 간격이 따라가는 대표 창: 5시간 창, 없으면 7일 창."""
+    return u.get("primary") or u.get("secondary") or {}
+
+
 def fmt_short(resets_at):
     """미니 모드용 짧은 남은 시간: 2h29m / 29m. 시각이 없거나 지났으면 빈 문자열."""
     try:
@@ -302,6 +312,8 @@ def fmt_short(resets_at):
     if sec <= 0:
         return ""
     h, m = divmod(sec // 60, 60)
+    if h >= 24:
+        return f"{h // 24}d{h % 24}h"
     return f"{h}h{m:02d}m" if h else f"{m}m"
 
 
@@ -323,8 +335,14 @@ def fetch_usage(keys=("claude", "codex")):
         if not prov:
             continue
         usage = item.get("usage") or {}
+        pace = item.get("pace") or {}
+        if (usage.get("primary") or {}).get("window_minutes", 0) >= 1440 and not usage.get("secondary"):
+            # 주간 한도만 있는 요금제(예: GPT Pro): 주간 창이 5시간 칸 자리로 오면 7일 칸으로 옮긴다
+            usage["secondary"] = usage.pop("primary")
+            if "primary" in pace:
+                pace["secondary"] = pace.pop("primary")
         if usage:
-            usage["_pace"] = item.get("pace") or {}
+            usage["_pace"] = pace
             result[prov] = usage
         else:
             errors[prov] = item.get("error") or "no data"
@@ -1279,7 +1297,7 @@ class Widget(tk.Tk):
             self.after(0, self._apply, None, {}, str(ex))
 
     def _pcts_snapshot(self):
-        return tuple(((self.usage.get(k) or {}).get("primary") or {}).get("used_percent") for k, *_ in PROVIDERS)
+        return tuple(main_window(self.usage.get(k) or {}).get("used_percent") for k, *_ in PROVIDERS)
 
     def _schedule_next(self, ok):
         """적응형 간격 결정. ok=False면 백오프."""
@@ -1329,7 +1347,7 @@ class Widget(tk.Tk):
         """5시간 사용률 기록 → 캐릭터 걷는 속도(소진 속도)와 쉬기/잠자기 판정에 사용."""
         now = time.time()
         for prov, u in data.items():
-            pct = (u.get("primary") or {}).get("used_percent")
+            pct = main_window(u).get("used_percent")
             if pct is None or prov not in self._hist:
                 continue
             h = self._hist[prov]
@@ -1350,7 +1368,7 @@ class Widget(tk.Tk):
 
     def _pose(self, prov):
         """walk(걷기) / idle(서서 쉬기) / sleep(잠) / down(100% 드러눕기) / stretch(리셋 기지개)"""
-        pct = ((self.usage.get(prov) or {}).get("primary") or {}).get("used_percent")
+        pct = main_window(self.usage.get(prov) or {}).get("used_percent")
         if pct is None:
             return "sleep"
         if pct >= 100:
@@ -1798,32 +1816,28 @@ class Widget(tk.Tk):
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
             ox = 8 + i * half
             u = self.usage.get(key) or {}
-            resets = [f"{lbl} 리셋: {fmt_remaining(w.get('resets_at'), w.get('used_percent')) or '–'}"
-                      for lbl, w in (("5시간", u.get("primary") or {}), ("7일", u.get("secondary") or {}))]
+            wins = shown_windows(u)
+            resets = [f"{lbl} 리셋: {fmt_remaining((u.get(k) or {}).get('resets_at'), (u.get(k) or {}).get('used_percent')) or '–'}"
+                      for k, lbl in wins]
             self._tips.append((i * half, 0, (i + 1) * half, MINI_H, f"{name}\n" + "\n".join(resets) + "\n\n" + TIPS["mini"]))
             stale = self._is_stale(key)
-            p5 = (u.get("primary") or {}).get("used_percent")
-            p7 = (u.get("secondary") or {}).get("used_percent")
-            t5, t7 = self._pct_txt(p5), self._pct_txt(p7)
+            pcts = [(u.get(k) or {}).get("used_percent") for k, _ in wins]
             x = ox + (30 if self.char != "none" else 4)
             d.text((x * S, 4 * S), name, font=self.f_tiny, fill=accent)           # 서비스 라벨 (윗줄)
-            worst = max([v for v in (p5, p7) if v is not None], default=None)     # 상태 점: 5h/7d 중 나쁜 쪽 색
+            worst = max([v for v in pcts if v is not None], default=None)        # 상태 점: 5h/7d 중 나쁜 쪽 색
             dx = x + d.textlength(name, font=self.f_tiny) / S + 4
             d.ellipse(((dx) * S, 8 * S, (dx + 5) * S, 13 * S), fill=C_STALE if (stale or worst is None) else pct_color(worst))
-            left = self.state.get("mini_reset", True) and fmt_short((u.get("primary") or {}).get("resets_at"))   # 5시간 창 리셋까지 (윗줄 오른쪽)
+            left = self.state.get("mini_reset", True) and fmt_short((u.get(wins[0][0]) or {}).get("resets_at"))   # 첫 창(보통 5시간) 리셋까지 (윗줄 오른쪽)
             if left:
                 rx = min(ox + half - 12, MINI_W - 16)   # 마지막 칸은 둥근 모서리를 피한다
                 d.text((rx * S, 4 * S), left, font=self.f_tiny, fill=INK_SOFT, anchor="ra")
-            d.text((x * S, (MINI_NUM_Y + 1) * S), "5h", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
-            x += d.textlength("5h", font=self.f_tiny) / S + 2
-            f5 = self.f_num_s if len(t5) >= 4 else self.f_num   # 100%는 한 단계 작게 (뒤 7d가 잘리지 않게)
-            d.text((x * S, MINI_NUM_Y * S), t5, font=f5,
-                   fill=(C_STALE if stale else pct_color(p5)), anchor="lm")
-            x += d.textlength(t5, font=f5) / S + 5
-            d.text((x * S, (MINI_NUM_Y + 1) * S), "7d", font=self.f_tiny, fill=INK_SOFT, anchor="lm")
-            x += d.textlength("7d", font=self.f_tiny) / S + 2
-            d.text((x * S, MINI_NUM_Y * S), t7, font=self.f_small,
-                   fill=(C_STALE if stale else pct_color(p7)), anchor="lm")
+            for n, ((wkey, _), pct) in enumerate(zip(wins, pcts)):
+                lbl, t = {"primary": "5h", "secondary": "7d"}[wkey], self._pct_txt(pct)
+                d.text((x * S, (MINI_NUM_Y + 1) * S), lbl, font=self.f_tiny, fill=INK_SOFT, anchor="lm")
+                x += d.textlength(lbl, font=self.f_tiny) / S + 2
+                f = self.f_small if n else (self.f_num_s if len(t) >= 4 else self.f_num)   # 첫 창만 크게, 100%는 한 단계 작게
+                d.text((x * S, MINI_NUM_Y * S), t, font=f, fill=(C_STALE if stale else pct_color(pct)), anchor="lm")
+                x += d.textlength(t, font=f) / S + 5
             if i < len(PROVIDERS) - 1:
                 lx = (ox + half - 6) * S
                 d.line((lx, 9 * S, lx, (MINI_H - 9) * S), fill=TRACK, width=2 * S)
@@ -1867,7 +1881,7 @@ class Widget(tk.Tk):
                     d.rounded_rectangle((bx0 * S, by * S, fx * S, (by + 4) * S), radius=2 * S,
                                         fill=C_STALE if stale else pct_color(fp))
 
-            for j, (wkey, wname) in enumerate(WINDOWS):
+            for j, (wkey, wname) in enumerate(shown_windows(u)):
                 win = u.get(wkey) or {}
                 gx, gy = ox + j * 138, 62
                 self._gauge(d, gx, gy, win.get("used_percent"), stale, elapsed=window_elapsed(win))
