@@ -44,11 +44,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
-# Let Windows scale the widget for high-DPI displays (e.g. 4K at 175%). The widget is drawn at 100% pixel
-# sizes; GDI-scaled mode enlarges it to the display scale. Per-monitor awareness made it tiny on 4K.
-# ponytail: the image is enlarged, so text is slightly soft above 150%. Render at scale if that matters.
+# 모니터 배율은 위젯이 직접 처리한다(Per-Monitor): 놓인 모니터의 배율(dpi_scale)만큼 키워 그린다.
+# GDI 배율 모드(v1.9.9)는 주 모니터 배율로 그린 걸 배율 낮은 모니터에서 축소해 메뉴 글자 획이 사라졌다.
 try:
-    ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-5))   # UNAWARE_GDISCALED
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)   # PROCESS_PER_MONITOR_DPI_AWARE
 except Exception:  # noqa: BLE001
     pass
 
@@ -743,12 +742,32 @@ def dock_y(x, w, h, default_y):
         return default_y, True
 
 
-def clamp_to_screen(x, y):
+def clamp_to_screen(x, y, w=W, h=H):
     vx, vy = _user32.GetSystemMetrics(76), _user32.GetSystemMetrics(77)
     vw, vh = _user32.GetSystemMetrics(78), _user32.GetSystemMetrics(79)
-    x = max(vx, min(x, vx + vw - W))
-    y = max(vy, min(y, vy + vh - H))
+    x = max(vx, min(x, vx + vw - w))
+    y = max(vy, min(y, vy + vh - h))
     return x, y
+
+
+def dpi_scale(x, y):
+    """(x, y) 자리 모니터의 화면 배율 (100% = 1.0, 175% = 1.75)."""
+    try:
+        mon = _user32.MonitorFromPoint(wintypes.POINT(int(x), int(y)), 2)   # MONITOR_DEFAULTTONEAREST
+        dx, dy = ctypes.c_uint(), ctypes.c_uint()
+        ctypes.windll.shcore.GetDpiForMonitor(ctypes.c_void_p(mon), 0, ctypes.byref(dx), ctypes.byref(dy))
+        return dx.value / 96 or 1.0
+    except Exception:  # noqa: BLE001
+        return 1.0
+
+
+def finish_card(img, w, h, radius, k):
+    """SS배로 그린 카드를 화면 배율 k 크기로 줄이고 둥근 모서리 밖을 투명색으로."""
+    size = (round(w * k), round(h * k))
+    out = img.resize(size, Image.LANCZOS)
+    mask = Image.new("L", size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=round(radius * k), fill=255)
+    return Image.composite(out, Image.new("RGB", size, CHROMA), mask)
 
 
 # ---------------------------------------------------------------- 알림 팝업 (위젯과 같은 디자인)
@@ -792,10 +811,13 @@ class Popup(tk.Toplevel):
 
     def _place(self):
         l, t, r, b = work_area()
+        k = self.k = dpi_scale(r - 1, b - 1)
+        w, h = round(POP_W * k), round(POP_H * k)
         idx = _popups.index(self)
-        x = r - POP_W - 16
-        y = b - POP_H - 16 - idx * (POP_H + 10)
-        self.geometry(f"{POP_W}x{POP_H}+{x}+{y}")
+        x = r - w - round(16 * k)
+        y = b - h - round(16 * k) - idx * (h + round(10 * k))
+        self.canvas.config(width=w, height=h)
+        self.geometry(f"{w}x{h}+{x}+{y}")
 
     def _render(self):
         S = SS
@@ -816,12 +838,10 @@ class Popup(tk.Toplevel):
         lines.append(cur)
         for i, ln in enumerate(lines[:2]):
             d.text((84 * S, (32 + i * 22) * S), ln, font=w.f_pop, fill=INK)
-        out = img.resize((POP_W, POP_H), Image.LANCZOS)
-        mask = Image.new("L", (POP_W, POP_H), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, POP_W - 1, POP_H - 1), radius=16, fill=255)
-        out = Image.composite(out, Image.new("RGB", (POP_W, POP_H), CHROMA), mask)
+        k = self.k
+        out = finish_card(img, POP_W, POP_H, 16, k)
         if w.char != "none":
-            w._char(out, 22, 26, self._frame, self.prov, self.body, self.mark, False, kind="body", scale=1.5)
+            w._char(out, round(22 * k), round(26 * k), self._frame, self.prov, self.body, self.mark, False, kind="body", scale=1.5 * k)
         return out
 
     def _anim(self):
@@ -899,6 +919,7 @@ class Widget(tk.Tk):
         apply_theme(resolve_theme(self.state.get("theme", "auto")))
         self._apply_alpha()
         x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
+        self.k = dpi_scale(x, y)
         self.geometry(f"{W}x{H}+{x}+{y}")
 
         self.canvas = tk.Canvas(self, width=W, height=H, bg=CHROMA, highlightthickness=0, bd=0)
@@ -1084,22 +1105,28 @@ class Widget(tk.Tk):
         self._apply_geometry()
 
     def _apply_geometry(self):
-        if self.mini:
-            w, h = MINI_W, MINI_H
-            slot = taskbar_slot(w, h)
-            if slot is None:
-                l, t, r, b = work_area()
-                slot = (r - w - 12, b - h - 12)
-            self._mini_slot = slot
-            x = slot[0] + int(self.state.get("mini_dx", 0))   # mini_dx: 사용자가 드래그로 정한 좌우 오프셋
-            y, on_screen = dock_y(x, w, h, slot[1])          # 놓인 모니터의 작업표시줄에 맞춤 (다중 모니터)
-            if not on_screen:                                # 그 자리에 모니터가 없음(빠짐/재배치) → 주 모니터로 복귀
-                self.state["mini_dx"] = 0
-                x, y = slot
-                self._save_state()
-        else:
-            w, h = W, H
-            x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
+        for _ in range(2):   # 크기는 놓일 모니터의 배율로, 자리는 크기로 정해지므로 배율이 바뀌면 한 번 더
+            k = self.k
+            if self.mini:
+                w, h = round(MINI_W * k), round(MINI_H * k)
+                slot = taskbar_slot(w, h)
+                if slot is None:
+                    l, t, r, b = work_area()
+                    slot = (r - w - 12, b - h - 12)
+                self._mini_slot = slot
+                x = slot[0] + int(self.state.get("mini_dx", 0))   # mini_dx: 사용자가 드래그로 정한 좌우 오프셋
+                y, on_screen = dock_y(x, w, h, slot[1])          # 놓인 모니터의 작업표시줄에 맞춤 (다중 모니터)
+                if not on_screen:                                # 그 자리에 모니터가 없음(빠짐/재배치) → 주 모니터로 복귀
+                    self.state["mini_dx"] = 0
+                    x, y = slot
+                    self._save_state()
+            else:
+                w, h = round(W * k), round(H * k)
+                x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12), w, h)
+            self.k = dpi_scale(x + w // 2, y + h // 2)
+            if self.k == k:
+                break
+        self.f_z = font("Pretendard-Bold.ttf", 9, scale=self.k)
         self.canvas.config(width=w, height=h)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self._last_frame_key = None
@@ -1219,8 +1246,8 @@ class Widget(tk.Tk):
         return None
 
     def _motion(self, e):
-        self.canvas.config(cursor="hand2" if self._hit(e.x, e.y) else "")
-        text = self._tip_at(e.x, e.y)
+        self.canvas.config(cursor="hand2" if self._hit(e.x / self.k, e.y / self.k) else "")
+        text = self._tip_at(e.x / self.k, e.y / self.k)
         if text != self._tip_key:
             self._tip_hide()
             if text:
@@ -1234,7 +1261,7 @@ class Widget(tk.Tk):
                 _user32.SetWindowPos(self._hwnd(), HWND_TOPMOST, 0, 0, 0, 0, SWP_QUIET)
         except Exception:  # noqa: BLE001
             pass
-        if self._hit(e.x, e.y):
+        if self._hit(e.x / self.k, e.y / self.k):
             self._drag = None
             return
         self._drag = (e.x_root - self.winfo_x(), e.y_root - self.winfo_y())
@@ -1257,7 +1284,7 @@ class Widget(tk.Tk):
                 self.state["x"], self.state["y"] = self.winfo_x(), self.winfo_y()
                 self._save_state()
             return
-        hit = self._hit(e.x, e.y)
+        hit = self._hit(e.x / self.k, e.y / self.k)
         if hit == "close":
             self.destroy()
         elif hit == "refresh":
@@ -1495,7 +1522,7 @@ class Widget(tk.Tk):
         tk.Button(win, text="닫기", command=win.destroy, bg=BTN_BG, fg=INK, relief="flat", padx=16).pack(pady=(0, 10))
         win.update_idletasks()
         x = self.winfo_x() + 20
-        y = self.winfo_y() + (H if not self.mini else -win.winfo_height() - 20)
+        y = self.winfo_y() + (self.winfo_height() if not self.mini else -win.winfo_height() - 20)
         win.geometry(f"+{max(0, x)}+{max(0, y)}")
 
     # ------------------------------------------------------------ Python 설치본 → exe 전환
@@ -1667,7 +1694,7 @@ class Widget(tk.Tk):
             self.deiconify()
             self.overrideredirect(True)
         if not self.mini:
-            x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12))
+            x, y = clamp_to_screen(self.state.get("x", 12), self.state.get("y", 12), self.winfo_width(), self.winfo_height())
             self.state["x"], self.state["y"] = x, y
         self._apply_geometry()
         self.attributes("-topmost", True)
@@ -1780,7 +1807,7 @@ class Widget(tk.Tk):
         return tuple(parts)
 
     def draw(self):
-        key = (self._base_key_now(), self.mini)
+        key = (self._base_key_now(), self.mini, self.k)
         if key != self._base_key:
             self._base = self._render_mini() if self.mini else self._render_base()
             self._base_key = key
@@ -1795,11 +1822,12 @@ class Widget(tk.Tk):
         for i, (pkey, name, accent, body, mark) in enumerate(PROVIDERS):
             pose = self._pose(pkey)
             fi = self._anim[pkey]["frame"]
+            k = self.k
             if self.mini:
-                self._char(out, 8 + i * MINI_SEC_W, 8, fi, pkey, body, mark, pose, kind="head", scale=1.0)
+                self._char(out, round((8 + i * MINI_SEC_W) * k), round(8 * k), fi, pkey, body, mark, pose, kind="head", scale=k)
             else:
                 ox = 10 + i * SEC_W
-                self._char(out, ox - 2, 8, fi, pkey, body, mark, pose, kind="body", scale=0.85)
+                self._char(out, round((ox - 2) * k), round(8 * k), fi, pkey, body, mark, pose, kind="body", scale=0.85 * k)
         if os.environ.get("WIDGET_SNAP"):
             out.save(os.environ["WIDGET_SNAP"])
         self._photo = ImageTk.PhotoImage(out)
@@ -1844,10 +1872,7 @@ class Widget(tk.Tk):
             if i < len(PROVIDERS) - 1:
                 lx = (ox + half - 6) * S
                 d.line((lx, 9 * S, lx, (MINI_H - 9) * S), fill=TRACK, width=2 * S)
-        out = img.resize((MINI_W, MINI_H), Image.LANCZOS)
-        mask = Image.new("L", (MINI_W, MINI_H), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, MINI_W - 1, MINI_H - 1), radius=MINI_H // 2, fill=255)
-        return Image.composite(out, Image.new("RGB", (MINI_W, MINI_H), CHROMA), mask)
+        return finish_card(img, MINI_W, MINI_H, MINI_H // 2, self.k)
 
     def _render_base(self):
         S = SS
@@ -1932,10 +1957,7 @@ class Widget(tk.Tk):
             self._buttons[label] = (cx - r - 2, cy - r - 2, cx + r + 2, cy + r + 2)
 
         self._tips = tips
-        out = img.resize((W, H), Image.LANCZOS)
-        mask = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, W - 1, H - 1), radius=RADIUS, fill=255)
-        return Image.composite(out, Image.new("RGB", (W, H), CHROMA), mask)
+        return finish_card(img, W, H, RADIUS, self.k)
 
     def _pct_txt(self, pct):
         """퍼센트 숫자 문구. '남은 %' 설정이면 100-사용률 (색·도넛은 그대로 사용률 기준)."""
