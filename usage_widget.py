@@ -24,6 +24,7 @@ RunCat처럼 픽셀 고양이가 달리며, 5시간 한도를 많이 쓸수록 �
 """
 
 import ctypes
+import functools
 import io
 import json
 import math
@@ -237,6 +238,20 @@ CHAR_STYLES = [("smooth", "부드러운 고양이"), ("black", "검은 고양이
                ("dog", "강아지"), ("rabbit", "토끼"), ("blob", "젤리"),
                ("pixel", "도트 고양이"), ("none", "없음")]
 CHAR_DEFAULT = "smooth"
+# 내 캐릭터: 설치 폴더의 my_character\ 에 PNG(투명 배경)를 두면 메뉴에 '내 캐릭터'가 생긴다. 배포본에는 그림이 없다.
+#   body0~3.png (전신 걷기 4프레임, 44:34 비율) / head0~3.png (미니 얼굴, 22:24) / body_sleep.png, head_sleep.png (선택)
+#   없는 프레임은 0번으로 대신한다.
+CUSTOM_CHAR_DIR = APP_DIR / "my_character"
+
+
+@functools.lru_cache(maxsize=64)
+def custom_sprite(kind, frame, size):
+    """my_character 폴더의 그림을 size로 줄여 돌려준다. 그림이 없으면 None."""
+    for name in (f"{kind}{frame}.png" if frame != "sleep" else f"{kind}_sleep.png", f"{kind}0.png"):
+        f = CUSTOM_CHAR_DIR / name
+        if f.exists():
+            return Image.open(f).convert("RGBA").resize(size, Image.LANCZOS)
+    return None
 # 부드러운 캐릭터 색 (몸, 무늬, 볼터치) - Claude는 주황 계열, GPT는 흑백 계열
 SMOOTH_COLORS = {
     "smooth": {"claude": ("#f6b27a", "#e08c4a", "#ffb7c5"), "codex": ("#d9d5cf", "#7d7d7d", "#ffc9d4")},
@@ -966,7 +981,7 @@ class Widget(tk.Tk):
         self.menu.add_command(label="지금 새로고침", command=self.refresh)
         char_menu = tk.Menu(self.menu, **kw)
         self.char_var = tk.StringVar(value=self.state.get("char", CHAR_DEFAULT))
-        for key, label in CHAR_STYLES:
+        for key, label in CHAR_STYLES + ([("custom", "내 캐릭터")] if CUSTOM_CHAR_DIR.is_dir() else []):
             char_menu.add_radiobutton(label=label, value=key, variable=self.char_var, command=self._set_char)
         self.menu.add_cascade(label="캐릭터 스타일", menu=char_menu)
         self.claude_var = tk.BooleanVar(value=self.state.get("show_claude", True))
@@ -2008,13 +2023,15 @@ class Widget(tk.Tk):
                 self._cat(d, x, y + 2, fi, body, mark, sleeping, px=max(1, int(round(CAT_PX * scale))))
             return
         sb, sm, blush = SMOOTH_COLORS.get(style, SMOOTH_COLORS["smooth"]).get(prov, (body, mark, "#ffb7c5"))
-        if style == "dog":
+        size = (int(44 * scale), int(34 * scale)) if kind == "body" else (int(22 * scale), int(24 * scale))
+        sprite = custom_sprite(kind, "sleep" if sleeping else fi, size) if style == "custom" else None
+        if sprite is None and style == "dog":
             sprite = self._smooth_dog(fi, sb, sm, blush, sleeping, kind, scale)
         elif style == "rabbit":
             sprite = self._smooth_rabbit(fi, sb, sm, blush, sleeping, kind, scale)
         elif style == "blob":
             sprite = self._smooth_blob(fi, sb, sm, blush, sleeping, kind, scale)
-        else:
+        elif sprite is None:     # 고양이들 (내 캐릭터 그림이 없을 때도)
             sprite = self._smooth_cat(fi, sb, sm, blush, sleeping, kind, scale, patches=(style == "calico"),
                                       eye="#ffd76a" if style == "black" else None)
         if pose == "down":       # 한도 소진: 옆으로 드러눕기

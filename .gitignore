@@ -8,3 +8,4 @@ pythonw.txt
 build/
 *.spec
 /AIUsageWidget.exe
+my_character/
