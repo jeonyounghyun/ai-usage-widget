@@ -307,6 +307,9 @@ def fmt_remaining(resets_at, pct=None):
     return f"{m}분 후"
 
 
+HIDE5_KEY = {"claude": "hide_claude5h", "codex": "hide_gpt5h"}   # 제공자별 '5시간 숨기기' 설정 이름
+
+
 def shown_windows(u, hide5=False):
     """표시할 창 목록. 5시간 창이 없거나 숨김 설정이면(주간 한도만 있는 요금제) 7일 창만."""
     return [w for w in WINDOWS if (u.get(w[0]) and not (hide5 and w[0] == "primary")) or not u.get("secondary")]
@@ -1011,9 +1014,11 @@ class Widget(tk.Tk):
         self.remain_var = tk.BooleanVar(value=self.state.get("remain", False))
         self.menu.add_checkbutton(label="남은 %로 표시 (사용률 대신)", variable=self.remain_var,
                                   command=lambda: self._set("remain", self.remain_var.get()))
-        self.hide5_var = tk.BooleanVar(value=self.state.get("hide_gpt5h", False))
-        self.menu.add_checkbutton(label="GPT 5시간 숨기기 (Pro 등 주간 한도만 있는 요금제)", variable=self.hide5_var,
-                                  command=lambda: self._set("hide_gpt5h", self.hide5_var.get()))
+        self.hide5_vars = {}
+        for key, label in (("claude", "Claude 5시간 숨기기 (Ultra 등 주간 한도만 있는 요금제)"),
+                           ("codex", "GPT 5시간 숨기기 (Pro 등 주간 한도만 있는 요금제)")):
+            v = self.hide5_vars[key] = tk.BooleanVar(value=self.state.get(HIDE5_KEY[key], False))
+            self.menu.add_checkbutton(label=label, variable=v, command=lambda k=HIDE5_KEY[key], v=v: self._set(k, v.get()))
         self.mini_reset_var = tk.BooleanVar(value=self.state.get("mini_reset", True))
         self.menu.add_checkbutton(label="미니 모드에 5시간 리셋 남은 시간 표시", variable=self.mini_reset_var,
                                   command=lambda: self._set("mini_reset", self.mini_reset_var.get()))
@@ -1818,7 +1823,7 @@ class Widget(tk.Tk):
             fb = extra_window(u, "fable")
             parts.append((fb.get("used_percent"), u.get("login_method"), self._is_stale(key)))
         parts.append(self._status()[:2])
-        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), self.state.get("mini_reset", True), self.state.get("remain", False), self.state.get("hide_gpt5h", False), getattr(self, "_ct_now", False), self.char, THEME_NOW))
+        parts.append((tuple(sorted(self.errors)), self.error, self.state.get("pace", False), self.state.get("mini_reset", True), self.state.get("remain", False), tuple(self.state.get(k, False) for k in HIDE5_KEY.values()), getattr(self, "_ct_now", False), self.char, THEME_NOW))
         return tuple(parts)
 
     def draw(self):
@@ -1862,7 +1867,7 @@ class Widget(tk.Tk):
         for i, (key, name, accent, body, mark) in enumerate(PROVIDERS):
             ox = 8 + i * half
             u = self.usage.get(key) or {}
-            wins = shown_windows(u, key == "codex" and self.state.get("hide_gpt5h"))
+            wins = shown_windows(u, self.state.get(HIDE5_KEY.get(key, ""), False))
             resets = [f"{lbl} 리셋: {fmt_remaining((u.get(k) or {}).get('resets_at'), (u.get(k) or {}).get('used_percent')) or '–'}"
                       for k, lbl in wins]
             self._tips.append((i * half, 0, (i + 1) * half, MINI_H, f"{name}\n" + "\n".join(resets) + "\n\n" + TIPS["mini"]))
@@ -1924,7 +1929,7 @@ class Widget(tk.Tk):
                     d.rounded_rectangle((bx0 * S, by * S, fx * S, (by + 4) * S), radius=2 * S,
                                         fill=C_STALE if stale else pct_color(fp))
 
-            for j, (wkey, wname) in enumerate(shown_windows(u, key == "codex" and self.state.get("hide_gpt5h"))):
+            for j, (wkey, wname) in enumerate(shown_windows(u, self.state.get(HIDE5_KEY.get(key, ""), False))):
                 win = u.get(wkey) or {}
                 gx, gy = ox + j * 138, 62
                 self._gauge(d, gx, gy, win.get("used_percent"), stale, elapsed=window_elapsed(win))
