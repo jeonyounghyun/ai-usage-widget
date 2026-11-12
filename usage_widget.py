@@ -1868,6 +1868,10 @@ class Widget(tk.Tk):
             ox = 8 + i * half
             u = self.usage.get(key) or {}
             wins = shown_windows(u, self.state.get(HIDE5_KEY.get(key, ""), False))
+            fb = extra_window(u, "fable")
+            if len(wins) == 1 and fb.get("used_percent") is not None:
+                u = dict(u, fable=fb)                     # 5시간을 숨겨 빈 자리에 Fable 주간 (F)
+                wins = wins + [("fable", "Fable 주간")]
             resets = [f"{lbl} 리셋: {fmt_remaining((u.get(k) or {}).get('resets_at'), (u.get(k) or {}).get('used_percent')) or '–'}"
                       for k, lbl in wins]
             self._tips.append((i * half, 0, (i + 1) * half, MINI_H, f"{name}\n" + "\n".join(resets) + "\n\n" + TIPS["mini"]))
@@ -1883,7 +1887,7 @@ class Widget(tk.Tk):
                 rx = min(ox + half - 12, MINI_W - 16)   # 마지막 칸은 둥근 모서리를 피한다
                 d.text((rx * S, 4 * S), left, font=self.f_tiny, fill=INK_SOFT, anchor="ra")
             for n, ((wkey, _), pct) in enumerate(zip(wins, pcts)):
-                lbl, t = {"primary": "5h", "secondary": "7d"}[wkey], self._pct_txt(pct)
+                lbl, t = {"primary": "5h", "secondary": "7d", "fable": "F"}[wkey], self._pct_txt(pct)
                 d.text((x * S, (MINI_NUM_Y + 1) * S), lbl, font=self.f_tiny, fill=INK_SOFT, anchor="lm")
                 x += d.textlength(lbl, font=self.f_tiny) / S + 2
                 f = self.f_small if n else (self.f_num_s if len(t) >= 4 else self.f_num)   # 첫 창만 크게, 100%는 한 단계 작게
