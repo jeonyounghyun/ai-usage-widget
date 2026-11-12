@@ -1381,8 +1381,12 @@ class Widget(tk.Tk):
     def _popup_menu(self, e):
         # 위젯이 항상 위라 아래로 펼치면 메뉴가 위젯에 가려진다 → 메뉴 아랫변을 위젯 윗변에 맞춰 위로 펼침
         self.menu.update_idletasks()
-        y = self.winfo_rooty() - self.menu.winfo_reqheight()
-        self.menu.tk_popup(e.x_root, y if y >= 0 else e.y_root)
+        # 단, 아래로 펼칠 자리가 없으면(작업표시줄 위 미니 모드) Windows가 알아서 위로 뒤집으므로 윗변 그대로 넘긴다
+        top, rh = self.winfo_rooty(), self.menu.winfo_reqheight()
+        cx, cy = self.winfo_rootx() + self.winfo_width() // 2, top + self.winfo_height() // 2
+        bottom = next((wk[3] for m, wk in monitors() if m[0] <= cx < m[2] and m[1] <= cy < m[3]), work_area()[3])
+        y = top if top + rh > bottom else top - rh
+        self.menu.tk_popup(e.x_root, y if top - rh >= 0 else e.y_root)
 
     # ------------------------------------------------------------ 데이터
     def refresh(self):
