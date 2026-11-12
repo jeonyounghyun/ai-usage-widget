@@ -8,8 +8,8 @@ RunCat처럼 픽셀 고양이가 달리며, 5시간 한도를 많이 쓸수록 �
 조작:
   - 드래그: 위치 이동 (자동 저장)
   - 우상단 ↻: 즉시 새로고침, ✕: 종료
-  - 우클릭: 메뉴 (새로고침 / 캐릭터 스타일 / Claude·GPT 표시 / 미니 모드 / 투명도 / 소진 예측 / 알림 / 클릭 통과 / 항상 위 /
-              전체화면 시 숨김 / 시작 시 자동 실행 / 업데이트 / 종료)
+  - 우클릭: 메뉴 (새로고침 / 미니 모드 / 설정... / 종료). 나머지 옵션은 설정 창의 탭
+              (표시 / 서비스 / 캐릭터 / 알림 / 창 동작 / 문제 해결 / 정보)
   - 마우스를 올리면 각 요소 설명(툴팁). 첫 실행 때 조작법 안내 팝업 1회
   - 클릭 통과 모드: 다른 창이 활성일 땐 마우스가 위젯을 통과. 바탕화면이 활성이거나 Ctrl을 누른 동안만 조작 가능
 
@@ -55,7 +55,7 @@ except Exception:  # noqa: BLE001
 import logging
 from logging.handlers import RotatingFileHandler
 
-VERSION = "1.9.14"
+VERSION = "1.9.15"
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller exe로 실행 중
 EXE_NAME = "AIUsageWidget.exe"
 APP_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -1121,7 +1121,7 @@ class Widget(tk.Tk):
                 "클릭 통과 모드",
                 "켜면 마우스가 위젯을 통과해 아래 창을 조작합니다 (위젯을 클릭할 수 없음).\n\n"
                 "위젯을 조작하려면: Ctrl 키를 누른 채로 클릭/우클릭, 또는 바탕화면을 먼저 클릭.\n"
-                "끄려면: Ctrl 누른 채 우클릭 → 클릭 통과 모드 해제.",
+                "끄려면: Ctrl 누른 채 우클릭 → 설정 → 창 동작 → 클릭 통과 모드 해제.",
                 parent=self)
             if not ok:
                 self.ct_var.set(False)
@@ -1620,7 +1620,7 @@ class Widget(tk.Tk):
             "· 지금 위젯은 잠깐 꺼졌다가 exe로 다시 켜집니다", parent=self)
         self._set("exe_offer_done", True)
         if not ok:
-            Popup(self, "나중에 바꾸려면: 우클릭 → 문제 해결 → exe 버전으로 바꾸기", INK_SOFT, None, seconds=10)
+            Popup(self, "나중에 바꾸려면: 우클릭 → 설정 → 문제 해결 → exe 버전으로 바꾸기", INK_SOFT, None, seconds=10)
             return
         Popup(self, "exe 버전 내려받는 중… (20MB)", INK_SOFT, None, seconds=30)
 
@@ -1841,13 +1841,13 @@ class Widget(tk.Tk):
                 parts.append("GPT 토큰 갱신 중")   # 10일 만료 → 위젯이 자동 갱신
                 continue
             if "expired" in err or "re-authenticate" in err or "credentials is off" in err or "not logged in" in err:
-                parts.append(f"{names.get(k, k)} 재로그인 필요 · 우클릭 → 문제 해결")
+                parts.append(f"{names.get(k, k)} 재로그인 필요 · 우클릭 → 설정 → 문제 해결")
                 continue
             t = ok_at.get(k)
             if t:
                 parts.append(f"{names.get(k, k)} 조회 실패 · {datetime.fromtimestamp(t).strftime('%H:%M')} 값 유지")
             else:
-                parts.append(f"{names.get(k, k)} 조회 실패 · 우클릭 → 문제 해결 → 점검")
+                parts.append(f"{names.get(k, k)} 조회 실패 · 우클릭 → 설정 → 문제 해결 → 점검")
         return " · ".join(parts)
 
     def _status(self):

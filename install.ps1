@@ -311,14 +311,14 @@ $ans = Ask "Codex나 ChatGPT Work를 쓰시나요? 쓰면 Y, 채팅만 쓰면 N 
 if ($ans -match "^[Yy]") {
     if (Do-GptConnect) { $providers = "claude,codex" }
 } else {
-    Say "  GPT는 숨깁니다. 나중에 connect_gpt.bat (또는 위젯 우클릭 → 문제 해결 → GPT 연결하기)로 켤 수 있습니다."
+    Say "  GPT는 숨깁니다. 나중에 connect_gpt.bat (또는 위젯 우클릭 → 설정 → 문제 해결 → GPT 연결하기)로 켤 수 있습니다."
     Set-WidgetState "show_gpt" $false
 }
 
 # ---------- 5. Win-CodexBar 설정 자동 기록
 Head "[5/7] Win-CodexBar 설정"
 if (Configure-CodexBar $providers) { Say "  자동 설정 완료 (Claude 읽기 허용, 표시 항목, 트레이 자동 실행 끔)." }
-else { Warn "자동 설정 실패. 위젯 우클릭 → 문제 해결 → 점검 실행 결과를 설치해 준 사람에게 보여주세요." }
+else { Warn "자동 설정 실패. 위젯 우클릭 → 설정 → 문제 해결 → 점검 실행 결과를 설치해 준 사람에게 보여주세요." }
 
 # ---------- 6. 바로가기 / 자동 실행
 Head "[6/7] 바로가기"
@@ -334,7 +334,7 @@ $ans = Ask "Windows를 켤 때 위젯도 자동으로 켤까요? [Y/N]"
 if ($ans -match "^[Yy]") {
     $su = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\ai-usage-widget.bat"
     "@echo off`r`ncall `"$(Join-Path $Here 'toggle_widget.bat')`" /boot`r`n" | Set-Content $su -Encoding ASCII
-    Say "  자동 실행을 켰습니다. (끄기: 위젯 우클릭 → 'Windows 시작 시 자동 실행' 해제)"
+    Say "  자동 실행을 켰습니다. (끄기: 위젯 우클릭 → 설정 → 창 동작 → 'Windows 시작 시 자동 실행' 해제)"
 }
 
 # ---------- 7. 실행
@@ -343,7 +343,7 @@ Head "[7/7] 위젯 실행"
 Say ""
 Say "  설치가 끝났습니다. 화면 왼쪽 위에 카드가 뜹니다 (첫 조회 5~10초)."
 Say "  - 다시 보이기: 바탕화면 'AI 사용량 위젯' 더블클릭"
-Say "  - 문제가 생기면: 위젯 우클릭 → 문제 해결 (점검 실행 / 다시 로그인 / GPT 연결 / 폴더 열기)"
+Say "  - 문제가 생기면: 위젯 우클릭 → 설정 → 문제 해결 (점검 실행 / 다시 로그인 / GPT 연결 / 폴더 열기)"
 Say "  - 위젯 폴더: $Here"
 Say ""
 Pause-Enter "닫으려면 Enter"

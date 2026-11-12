@@ -564,7 +564,7 @@ class SetupWindow(tk.Tk):
                                     "Claude 계정으로 로그인하고 'Authorize'(허용)를 누르면 됩니다.",
                            [("go", "로그인 시작"), ("skip", "나중에")])
             if ans != "go":
-                self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
+                self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 설정 → 문제 해결 → Claude 다시 로그인")
                 return True
             self.step("claude", "run", "브라우저에서 로그인 진행 중…")
             before = CLAUDE_CRED.stat().st_mtime if CLAUDE_CRED.exists() else 0
@@ -573,7 +573,7 @@ class SetupWindow(tk.Tk):
                            "② 브라우저에서 로그인 → Authorize, 코드가 나오면 CMD 창에 붙여넣고 Enter\n"
                            "③ '>' 입력창이 바로 뜨면 /login 입력 → 로그인 → 끝나면 /exit 입력")
             if self.hidden_login(exe, ["auth", "login"], "Claude", fallback=old_way):
-                self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
+                self.step("claude", "warn", "건너뜀 — 나중에 위젯 우클릭 → 설정 → 문제 해결 → Claude 다시 로그인")
                 return True
             renewed = CLAUDE_CRED.exists() and CLAUDE_CRED.stat().st_mtime > before and claude_login_state() == "ok"
             slog(f"[{self.mode}] claude credentials renewed: {renewed}")
@@ -588,7 +588,7 @@ class SetupWindow(tk.Tk):
                 return True
             reason = (f"아직 로그인이 확인되지 않습니다 ({err[:60]}). 한 번 더 해 볼까요?\n"
                       "브라우저 로그인을 처음부터 다시 해 주세요 (한 번 쓴 코드는 다시 쓸 수 없어요).")
-        self.step("claude", "warn", "로그인이 확인되지 않았습니다 — 나중에 위젯 우클릭 → 문제 해결 → Claude 다시 로그인")
+        self.step("claude", "warn", "로그인이 확인되지 않았습니다 — 나중에 위젯 우클릭 → 설정 → 문제 해결 → Claude 다시 로그인")
         return True
 
     def do_gpt(self, ask_first):
@@ -598,7 +598,7 @@ class SetupWindow(tk.Tk):
                            [("y", "씁니다"), ("n", "채팅만 써요")])
             if ans != "y":
                 set_state("show_gpt", False)
-                self.step("gpt", "skip", "숨김 — 나중에 위젯 우클릭 → 문제 해결 → GPT 연결하기")
+                self.step("gpt", "skip", "숨김 — 나중에 위젯 우클릭 → 설정 → 문제 해결 → GPT 연결하기")
                 return ["claude"]
         self.step("gpt", "run", "GPT 로그인 도구 확인 중…")
         if not find_tool("codex"):
@@ -631,7 +631,7 @@ class SetupWindow(tk.Tk):
                 self.step("gpt", "run", "브라우저에서 로그인 진행 중…")
                 self.hidden_login(codex, ["login"], "ChatGPT")
         if not CODEX_AUTH.exists():
-            self.step("gpt", "warn", "GPT 로그인이 확인되지 않았습니다 — 나중에 위젯 우클릭 → 문제 해결 → GPT 연결하기")
+            self.step("gpt", "warn", "GPT 로그인이 확인되지 않았습니다 — 나중에 위젯 우클릭 → 설정 → 문제 해결 → GPT 연결하기")
             return ["claude"]
         set_state("show_gpt", True)
         self.step("gpt", "ok", "연결됨")
@@ -642,7 +642,7 @@ class SetupWindow(tk.Tk):
         if configure_codexbar(providers):
             self.step("config", "ok", "완료 (Claude 읽기 허용, 표시 항목, 트레이 자동 실행 끔)")
         else:
-            self.step("config", "warn", "자동 설정 실패 — 위젯 우클릭 → 문제 해결 → 점검 실행")
+            self.step("config", "warn", "자동 설정 실패 — 위젯 우클릭 → 설정 → 문제 해결 → 점검 실행")
 
     def do_shortcut(self):
         self.step("shortcut", "run")
