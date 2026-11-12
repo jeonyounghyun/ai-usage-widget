@@ -1918,7 +1918,10 @@ class Widget(tk.Tk):
 
             # 추가 창 (Claude: Fable 전용 주간) - 작은 막대
             fb = extra_window(u, "fable")
-            if fb.get("used_percent") is not None:
+            wins = shown_windows(u, self.state.get(HIDE5_KEY.get(key, ""), False))
+            if len(wins) == 1 and fb.get("used_percent") is not None:
+                wins = wins + [("fable", "Fable 주간")]   # 5시간 칸을 숨겨 비었으면 Fable을 도넛으로 (작은 막대 대신)
+            elif fb.get("used_percent") is not None:
                 fp = fb["used_percent"]
                 bx0, bx1, by = ox + 146, ox + half - 30, 49
                 d.text((tx * S, (by - 5) * S), f"Fable 주간 {self._pct_txt(fp)}", font=self.f_tiny, fill=INK_SOFT)
@@ -1929,8 +1932,8 @@ class Widget(tk.Tk):
                     d.rounded_rectangle((bx0 * S, by * S, fx * S, (by + 4) * S), radius=2 * S,
                                         fill=C_STALE if stale else pct_color(fp))
 
-            for j, (wkey, wname) in enumerate(shown_windows(u, self.state.get(HIDE5_KEY.get(key, ""), False))):
-                win = u.get(wkey) or {}
+            for j, (wkey, wname) in enumerate(wins):
+                win = fb if wkey == "fable" else (u.get(wkey) or {})
                 gx, gy = ox + j * 138, 62
                 self._gauge(d, gx, gy, win.get("used_percent"), stale, elapsed=window_elapsed(win))
                 tips.append((gx, gy, gx + GAUGE + 100, gy + 40, TIPS[wkey]))
