@@ -979,92 +979,141 @@ class Widget(tk.Tk):
 
     # ------------------------------------------------------------ 메뉴
     def _build_menu(self):
+        """설정 값(tk 변수)을 만들고, 우클릭 메뉴는 자주 쓰는 것만 둔다. 나머지는 설정 창(_open_settings)."""
+        st = self.state.get
+        B, S = tk.BooleanVar, tk.StringVar
+        self.char_var = S(value=st("char", CHAR_DEFAULT))
+        self.claude_var = B(value=st("show_claude", True))
+        self.gpt_var = B(value=st("show_gpt", True))
+        self.mini_var = B(value=self.mini)
+        self.alpha_var = tk.DoubleVar(value=st("alpha", 1.0))
+        self.theme_var = S(value=st("theme", "auto"))
+        self.dim_var = B(value=st("hover_dim", False))
+        self.pace_var = B(value=st("pace", False))
+        self.remain_var = B(value=st("remain", False))
+        self.hide5_vars = {k: B(value=st(HIDE5_KEY[k], False)) for k in ("claude", "codex")}
+        self.mini_reset_var = B(value=st("mini_reset", True))
+        self.popup_var = B(value=st("popup", True))
+        self.sound_var = B(value=st("sound", True))
+        self.toast_var = B(value=st("toast", False))
+        self.ct_var = B(value=st("click_through", False))
+        self.topmost_var = B(value=st("topmost", True))
+        self.fs_var = B(value=st("hide_fullscreen", True))
+        self.autostart_var = B(value=STARTUP_BAT.exists())
+        self.upd_var = B(value=st("auto_update", True))
+
         kw = dict(tearoff=0, bg=CARD, fg=INK, activebackground=MENU_HL, activeforeground=INK)
         self.menu = tk.Menu(self, **kw)
         self.menu.add_command(label="지금 새로고침", command=self.refresh)
-        char_menu = tk.Menu(self.menu, **kw)
-        self.char_var = tk.StringVar(value=self.state.get("char", CHAR_DEFAULT))
-        for key, label in CHAR_STYLES + ([("custom", "내 캐릭터")] if CUSTOM_CHAR_DIR.is_dir() else []):
-            char_menu.add_radiobutton(label=label, value=key, variable=self.char_var, command=self._set_char)
-        self.menu.add_cascade(label="캐릭터 스타일", menu=char_menu)
-        self.claude_var = tk.BooleanVar(value=self.state.get("show_claude", True))
-        self.menu.add_checkbutton(label="Claude 표시", variable=self.claude_var, command=self._toggle_providers)
-        self.gpt_var = tk.BooleanVar(value=self.state.get("show_gpt", True))
-        self.menu.add_checkbutton(label="GPT 표시 (Codex·ChatGPT Work 한도)", variable=self.gpt_var, command=self._toggle_providers)
-        self.mini_var = tk.BooleanVar(value=self.mini)
-        self.menu.add_checkbutton(label="작업표시줄 미니 모드 (더블클릭으로 전환)", variable=self.mini_var,
+        self.menu.add_checkbutton(label="미니 모드 (더블클릭으로 전환)", variable=self.mini_var,
                                   command=lambda: self.toggle_mini(self.mini_var.get()))
-
-        alpha_menu = tk.Menu(self.menu, **kw)
-        self.alpha_var = tk.DoubleVar(value=self.state.get("alpha", 1.0))
-        for label, v in (("100%", 1.0), ("85%", 0.85), ("70%", 0.7), ("55%", 0.55)):
-            alpha_menu.add_radiobutton(label=label, value=v, variable=self.alpha_var, command=self._set_alpha)
-        self.menu.add_cascade(label="투명도", menu=alpha_menu)
-        theme_menu = tk.Menu(self.menu, **kw)
-        self.theme_var = tk.StringVar(value=self.state.get("theme", "auto"))
-        for v, label in (("auto", "자동 (Windows 설정 따라감)"), ("light", "밝게"), ("dark", "어둡게")):
-            theme_menu.add_radiobutton(label=label, value=v, variable=self.theme_var, command=self._set_theme)
-        self.menu.add_cascade(label="테마", menu=theme_menu)
-        self.dim_var = tk.BooleanVar(value=self.state.get("hover_dim", False))
-        self.menu.add_checkbutton(label="마우스를 올릴 때만 선명하게 (평소 흐림)", variable=self.dim_var, command=self._set_dim)
-
-        self.pace_var = tk.BooleanVar(value=self.state.get("pace", False))
-        self.menu.add_checkbutton(label="소진 예측 표시 (리셋 전에 모자랄지)", variable=self.pace_var,
-                                  command=lambda: self._set("pace", self.pace_var.get()))
-        self.remain_var = tk.BooleanVar(value=self.state.get("remain", False))
-        self.menu.add_checkbutton(label="남은 %로 표시 (사용률 대신)", variable=self.remain_var,
-                                  command=lambda: self._set("remain", self.remain_var.get()))
-        self.hide5_vars = {}
-        for key, label in (("claude", "Claude 5시간 숨기기 (Ultra 등 주간 한도만 있는 요금제)"),
-                           ("codex", "GPT 5시간 숨기기 (Pro 등 주간 한도만 있는 요금제)")):
-            v = self.hide5_vars[key] = tk.BooleanVar(value=self.state.get(HIDE5_KEY[key], False))
-            self.menu.add_checkbutton(label=label, variable=v, command=lambda k=HIDE5_KEY[key], v=v: self._set(k, v.get()))
-        self.mini_reset_var = tk.BooleanVar(value=self.state.get("mini_reset", True))
-        self.menu.add_checkbutton(label="미니 모드에 5시간 리셋 남은 시간 표시", variable=self.mini_reset_var,
-                                  command=lambda: self._set("mini_reset", self.mini_reset_var.get()))
-
-        alert_menu = tk.Menu(self.menu, **kw)
-        self.popup_var = tk.BooleanVar(value=self.state.get("popup", True))
-        alert_menu.add_checkbutton(label="화면 팝업 (고양이 카드)", variable=self.popup_var,
-                                   command=lambda: self._set("popup", self.popup_var.get()))
-        self.sound_var = tk.BooleanVar(value=self.state.get("sound", True))
-        alert_menu.add_checkbutton(label="소리 (100% 소진·리셋 때만)", variable=self.sound_var,
-                                   command=lambda: self._set("sound", self.sound_var.get()))
-        self.toast_var = tk.BooleanVar(value=self.state.get("toast", False))
-        alert_menu.add_checkbutton(label="Windows 알림 센터에도 남기기", variable=self.toast_var,
-                                   command=lambda: self._set("toast", self.toast_var.get()))
-        self.menu.add_cascade(label="알림 (80% · 100% · 리셋)", menu=alert_menu)
-
-        self.ct_var = tk.BooleanVar(value=self.state.get("click_through", False))
-        self.menu.add_checkbutton(label="클릭 통과 모드", variable=self.ct_var, command=self._toggle_click_through)
-        self.topmost_var = tk.BooleanVar(value=self.state.get("topmost", True))
-        self.menu.add_checkbutton(label="항상 위에 표시", variable=self.topmost_var, command=self._toggle_topmost)
-        self.fs_var = tk.BooleanVar(value=self.state.get("hide_fullscreen", True))
-        self.menu.add_checkbutton(label="전체화면 앱 실행 시 숨김", variable=self.fs_var,
-                                  command=lambda: self._set("hide_fullscreen", self.fs_var.get()))
-        self.autostart_var = tk.BooleanVar(value=STARTUP_BAT.exists())
-        self.menu.add_checkbutton(label="Windows 시작 시 자동 실행", variable=self.autostart_var,
-                                  command=self._toggle_autostart)
         self.menu.add_separator()
-        fix_menu = tk.Menu(self.menu, **kw)
-        fix_menu.add_command(label="점검 실행 (어디가 막혔는지 확인)", command=lambda: self._run_tool("doctor.bat"))
-        fix_menu.add_command(label="Claude 다시 로그인", command=lambda: self._run_tool("relogin.bat"))
-        fix_menu.add_command(label="GPT 연결하기 (설치·로그인)", command=lambda: self._run_tool("connect_gpt.bat"))
-        fix_menu.add_command(label="설치 다시 하기 (된 단계는 건너뜀)", command=lambda: self._run_tool("install.bat"))
-        if self._is_python_install():
-            fix_menu.add_command(label="exe 버전으로 바꾸기 (Python 없이 실행)", command=self._confirm_exe)
-        fix_menu.add_separator()
-        fix_menu.add_command(label="설치 폴더 열기", command=lambda: os.startfile(str(HERE)))
-        fix_menu.add_command(label="로그 열기", command=lambda: os.startfile(str(LOG_PATH)))
-        fix_menu.add_command(label="위젯 제거", command=lambda: self._run_tool("uninstall.bat"))
-        self.menu.add_cascade(label="문제 해결", menu=fix_menu)
-        self.menu.add_separator()
-        self.upd_var = tk.BooleanVar(value=self.state.get("auto_update", True))
-        self.menu.add_checkbutton(label="새 버전 자동 확인 (하루 1회)", variable=self.upd_var,
-                                  command=lambda: self._set("auto_update", self.upd_var.get()))
-        self.menu.add_command(label=f"지금 업데이트 확인 (현재 v{VERSION})", command=lambda: self.check_update(manual=True))
+        self.menu.add_command(label="⚙ 설정...", command=self._open_settings)
         self.menu.add_separator()
         self.menu.add_command(label="종료 (위젯 끄기)", command=self.destroy)
+        win = getattr(self, "_settings_win", None)
+        if win is not None and win.winfo_exists():   # 테마가 바뀌어 변수를 새로 만들었으면 설정 창도 다시 연다
+            tab = win.nb.index("current")
+            win.destroy()
+            self._open_settings(tab)
+
+    def _open_settings(self, tab=0):
+        from tkinter import ttk
+        win = getattr(self, "_settings_win", None)
+        if win is not None and win.winfo_exists():
+            win.deiconify(); win.lift(); win.focus_force()
+            return
+        win = self._settings_win = tk.Toplevel(self)
+        win.title(f"AI 사용량 위젯 설정 (v{VERSION})")
+        win.resizable(False, False)
+        win.attributes("-topmost", True)
+        F = "맑은 고딕"
+        sty = ttk.Style(win)
+        sty.configure("TNotebook.Tab", padding=(14, 6), font=(F, 10))
+        for c in ("TCheckbutton", "TRadiobutton", "TButton", "TLabel"):
+            sty.configure(c, font=(F, 10))
+        sty.configure("H.TLabel", font=(F, 10, "bold"))
+        nb = win.nb = ttk.Notebook(win)
+        nb.pack(padx=12, pady=12, fill="both", expand=True)
+
+        def page(name):
+            f = ttk.Frame(nb, padding=16); nb.add(f, text=name); return f
+        def head(f, t):
+            ttk.Label(f, text=t, style="H.TLabel").pack(anchor="w", pady=(10, 4))
+        def chk(f, t, var, cmd):
+            ttk.Checkbutton(f, text=t, variable=var, command=cmd).pack(anchor="w", pady=2)
+        def setter(key, var):
+            return lambda: self._set(key, var.get())
+        def radios(f, opts, var, cmd, side="left"):
+            row = ttk.Frame(f); row.pack(anchor="w")
+            for v, t in opts:
+                ttk.Radiobutton(row, text=t, value=v, variable=var, command=cmd).pack(
+                    side=side, anchor="w", padx=(0, 12), pady=2)
+        def btn(f, t, cmd):
+            ttk.Button(f, text=t, width=34, command=cmd).pack(anchor="w", pady=2)
+
+        f = page("표시")
+        head(f, "숫자")
+        chk(f, "남은 %로 표시 (사용률 대신)", self.remain_var, setter("remain", self.remain_var))
+        chk(f, "소진 예측 표시 (리셋 전에 모자랄지)", self.pace_var, setter("pace", self.pace_var))
+        head(f, "미니 모드")
+        chk(f, "작업표시줄 미니 모드 (더블클릭으로 전환)", self.mini_var, lambda: self.toggle_mini(self.mini_var.get()))
+        chk(f, "미니 모드에 5시간 리셋 남은 시간 표시", self.mini_reset_var, setter("mini_reset", self.mini_reset_var))
+        head(f, "테마")
+        radios(f, (("auto", "자동 (Windows 따라감)"), ("light", "밝게"), ("dark", "어둡게")), self.theme_var, self._set_theme)
+        head(f, "투명도")
+        radios(f, ((1.0, "100%"), (0.85, "85%"), (0.7, "70%"), (0.55, "55%")), self.alpha_var, self._set_alpha)
+        chk(f, "마우스를 올릴 때만 선명하게 (평소 흐림)", self.dim_var, self._set_dim)
+
+        f = page("서비스")
+        head(f, "Claude")
+        chk(f, "Claude 표시", self.claude_var, self._toggle_providers)
+        v = self.hide5_vars["claude"]
+        chk(f, "5시간 한도 숨기기 (Ultra 등 주간 한도만 있는 요금제)", v, setter(HIDE5_KEY["claude"], v))
+        head(f, "GPT")
+        chk(f, "GPT 표시 (Codex·ChatGPT Work 한도)", self.gpt_var, self._toggle_providers)
+        v = self.hide5_vars["codex"]
+        chk(f, "5시간 한도 숨기기 (Pro 등 주간 한도만 있는 요금제)", v, setter(HIDE5_KEY["codex"], v))
+
+        f = page("캐릭터")
+        head(f, "캐릭터 스타일")
+        radios(f, CHAR_STYLES + ([("custom", "내 캐릭터")] if CUSTOM_CHAR_DIR.is_dir() else []),
+               self.char_var, self._set_char, side="top")
+
+        f = page("알림")
+        head(f, "80% · 100% · 리셋 때")
+        chk(f, "화면 팝업 (고양이 카드)", self.popup_var, setter("popup", self.popup_var))
+        chk(f, "소리 (100% 소진·리셋 때만)", self.sound_var, setter("sound", self.sound_var))
+        chk(f, "Windows 알림 센터에도 남기기", self.toast_var, setter("toast", self.toast_var))
+
+        f = page("창 동작")
+        chk(f, "항상 위에 표시", self.topmost_var, self._toggle_topmost)
+        chk(f, "클릭 통과 모드", self.ct_var, self._toggle_click_through)
+        chk(f, "전체화면 앱 실행 시 숨김", self.fs_var, setter("hide_fullscreen", self.fs_var))
+        chk(f, "Windows 시작 시 자동 실행", self.autostart_var, self._toggle_autostart)
+
+        f = page("문제 해결")
+        btn(f, "점검 실행 (어디가 막혔는지 확인)", lambda: self._run_tool("doctor.bat"))
+        btn(f, "Claude 다시 로그인", lambda: self._run_tool("relogin.bat"))
+        btn(f, "GPT 연결하기 (설치·로그인)", lambda: self._run_tool("connect_gpt.bat"))
+        btn(f, "설치 다시 하기 (된 단계는 건너뜀)", lambda: self._run_tool("install.bat"))
+        if self._is_python_install():
+            btn(f, "exe 버전으로 바꾸기 (Python 없이 실행)", self._confirm_exe)
+        btn(f, "설치 폴더 열기", lambda: os.startfile(str(HERE)))
+        btn(f, "로그 열기", lambda: os.startfile(str(LOG_PATH)))
+        btn(f, "위젯 제거", lambda: self._run_tool("uninstall.bat"))
+
+        f = page("정보")
+        ttk.Label(f, text=f"AI 사용량 위젯  v{VERSION}", style="H.TLabel").pack(anchor="w")
+        chk(f, "새 버전 자동 확인 (하루 1회)", self.upd_var, setter("auto_update", self.upd_var))
+        ttk.Button(f, text="지금 업데이트 확인", command=lambda: self.check_update(manual=True)).pack(anchor="w", pady=8)
+
+        nb.select(tab)
+        win.update_idletasks()
+        x = min(max(0, self.winfo_rootx()), win.winfo_screenwidth() - win.winfo_reqwidth())
+        y = min(max(0, self.winfo_rooty()), win.winfo_screenheight() - win.winfo_reqheight() - 40)
+        win.geometry(f"+{x}+{y}")
+        win.focus_force()
 
     def _toggle_click_through(self):
         if self.ct_var.get():
