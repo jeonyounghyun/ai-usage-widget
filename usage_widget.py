@@ -1379,7 +1379,10 @@ class Widget(tk.Tk):
             self._apply_alpha()
 
     def _popup_menu(self, e):
-        self.menu.tk_popup(e.x_root, e.y_root)
+        # 위젯이 항상 위라 아래로 펼치면 메뉴가 위젯에 가려진다 → 메뉴 아랫변을 위젯 윗변에 맞춰 위로 펼침
+        self.menu.update_idletasks()
+        y = self.winfo_rooty() - self.menu.winfo_reqheight()
+        self.menu.tk_popup(e.x_root, y if y >= 0 else e.y_root)
 
     # ------------------------------------------------------------ 데이터
     def refresh(self):
